@@ -21,14 +21,13 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Path mapping untuk workspaces */
-    "baseUrl": ".",
     "paths": {
-      "@pubhub/shared-types": ["../../packages/shared-types/src/index.ts"],
-      "@pubhub/shared-types/*": ["../../packages/shared-types/src/*"],
-      "@pubhub/shared-utils": ["../../packages/shared-utils/src/index.ts"],
-      "@pubhub/shared-utils/*": ["../../packages/shared-utils/src/*"],
-      "@pubhub/shared-ui": ["../../packages/shared-ui/src/index.ts"],
-      "@pubhub/shared-ui/*": ["../../packages/shared-ui/src/*"]
+      "@pubhub/shared-types": ["./../../packages/shared-types/src/index.ts"],
+      "@pubhub/shared-types/*": ["./../../packages/shared-types/src/*"],
+      "@pubhub/shared-utils": ["./../../packages/shared-utils/src/index.ts"],
+      "@pubhub/shared-utils/*": ["./../../packages/shared-utils/src/*"],
+      "@pubhub/shared-ui": ["./../../packages/shared-ui/src/index.ts"],
+      "@pubhub/shared-ui/*": ["./../../packages/shared-ui/src/*"]
     }
   },
   "include": ["src"]

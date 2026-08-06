@@ -13,7 +13,11 @@ const SignatureSection: React.FC = () => {
     signatureName,
     setSignatureName,
     signatureImg,
-    setSignatureImg
+    setSignatureImg,
+    signatureSpacing,
+    setSignatureSpacing,
+    showDefaultSignature,
+    setShowDefaultSignature
   } = useSettingsForm();
 
   const { showToast, rightPanelVisible } = useAppContext();
@@ -116,9 +120,56 @@ const SignatureSection: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Toggle: Tampilkan TTD Default (hanya relevan jika tidak ada gambar) */}
+        {!signatureImg && (
+          <div className="compact-form-group">
+            <label className="compact-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={showDefaultSignature}
+                onChange={(e) => setShowDefaultSignature(e.target.checked)}
+                style={{ accentColor: 'var(--accent)', width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              Tampilkan TTD Kursif Default
+            </label>
+            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              Jika dinonaktifkan, area tanda tangan akan kosong saat tidak ada gambar TTD
+            </span>
+          </div>
+        )}
+
+        {/* Slider: Jarak antara Nama/Tanggal dan TTD */}
+        <div className="compact-form-group" style={{ gridColumn: rightPanelVisible ? undefined : '1 / -1' }}>
+          <label className="compact-label">Jarak Nama & Tanggal ke TTD ({signatureSpacing}px)</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={signatureSpacing}
+              onChange={(e) => setSignatureSpacing(Number(e.target.value))}
+              style={{ flex: 1, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={signatureSpacing}
+              onChange={(e) => {
+                const val = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+                setSignatureSpacing(val);
+              }}
+              className="compact-input"
+              style={{ width: '56px', textAlign: 'center', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+            />
+          </div>
+        </div>
       </div>
     </>
   );
 };
 
 export default SignatureSection;
+

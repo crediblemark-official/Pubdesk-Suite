@@ -93,7 +93,6 @@ const MainLayout = () => {
   };
 
   const renderModule = () => {
-    const { showToast } = useAppContext();
     switch (appState.activeModule) {
       case 'home':
         return <HomeDashboard />;

@@ -13,7 +13,7 @@ export const MODULE_LABELS: Record<string, string> = {
   'kontak': 'Kontak',
   'penulis': 'Penulis',
   'penerbit': 'Penerbit',
-  'naskah': 'Naskah',
+  'naskah': 'Buku / Naskah',
   'legalitas': 'Legalitas',
   'activity-log': 'Activity Log',
 };

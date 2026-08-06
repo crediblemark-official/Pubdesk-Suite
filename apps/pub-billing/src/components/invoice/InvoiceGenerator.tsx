@@ -98,7 +98,7 @@ const InvoiceGenerator: React.FC = () => {
   const prepareInvoiceData = async () => {
     const isPenulis = customer.isPenulis;
     let contactId: number | undefined = undefined;
-    const customerNameTrimmed = customer.name.trim();
+    const customerNameTrimmed = (customer.name || '').trim();
 
     const existingContact = contacts.find(c => c.name.toLowerCase() === customerNameTrimmed.toLowerCase());
 

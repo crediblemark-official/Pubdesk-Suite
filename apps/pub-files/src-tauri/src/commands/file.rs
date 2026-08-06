@@ -140,10 +140,27 @@ pub async fn create_physical_file(app_handle: tauri::AppHandle, filename: String
 pub async fn open_file_physically(path: String) -> Result<(), String> {
     use std::process::Command;
     
-    Command::new("xdg-open")
-        .arg(&path)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
         
     Ok(())
 }
@@ -156,18 +173,33 @@ pub async fn open_file_location_physically(path: String) -> Result<(), String> {
     let path_ref = Path::new(&path);
     let parent = path_ref.parent().ok_or("No parent directory")?;
     
-    // Coba buka dengan nautilus --select agar menyorot file terpilih (khusus Linux GNOME)
-    let nautilus_status = Command::new("nautilus")
-        .arg("--select")
-        .arg(&path)
-        .spawn();
-        
-    if nautilus_status.is_err() {
-        // Fallback membuka folder induk menggunakan xdg-open
-        Command::new("xdg-open")
-            .arg(parent)
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .args(["/select,", &path])
             .spawn()
             .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let nautilus_status = Command::new("nautilus")
+            .arg("--select")
+            .arg(&path)
+            .spawn();
+            
+        if nautilus_status.is_err() {
+            Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
     }
     
     Ok(())

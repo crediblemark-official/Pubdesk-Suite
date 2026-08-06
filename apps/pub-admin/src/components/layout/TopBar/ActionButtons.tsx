@@ -25,11 +25,6 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({ activeModule }) =>
   } = useAppContext();
 
   const { 
-    penulis, 
-    penerbit, 
-    naskah, 
-    tim,
-    legalitas,
     loadPenulis,
     loadPenerbit,
     loadNaskah,
@@ -37,7 +32,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({ activeModule }) =>
     loadLegalitas
   } = useDataMasterContext();
   
-  const { tasks, loadTasks } = useWorkflowContext();
+  const { loadTasks } = useWorkflowContext();
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

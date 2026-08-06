@@ -42,7 +42,7 @@ export interface SmartRelationFieldProps {
   onRequestCreate?: () => void;
   /** Render prop for the inline quick-create form inside the modal or inline. */
   renderCreateForm?: (props: {
-    onSave: (data: Record<string, any>) => void;
+    onSave: (data: any) => void;
     onCancel: () => void;
   }) => React.ReactNode;
   /** Whether to render the create form inline instead of in a modal dialog. */

@@ -3,12 +3,14 @@ import { AppState } from '../types/app.types';
 import { Contact } from '../types/contact.types';
 import { File } from '../types/file.types';
 import { Service } from '../types/service.types';
+import { Book } from '../types/book.types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 // Import hooks
 import { useUIState, ConfirmOptions, ImportExportActions } from '../hooks/useUIState';
 import { useContactState } from '../hooks/useContactState';
+import { useBookState } from '../hooks/useBookState';
 import { useServiceState } from '../hooks/useServiceState';
 import { useFileState } from '../hooks/useFileState';
 import { useGDriveState, GDriveAccount } from '../hooks/useGDriveState';
@@ -29,6 +31,7 @@ interface AppContextType {
   contacts: Contact[];
   files: File[];
   services: Service[];
+  books: Book[];
   toast: { message: string; type: 'success' | 'error' | 'info' } | null;
   selectedFileId: number | null;
   setSelectedFileId: (id: number | null) => void;
@@ -38,6 +41,7 @@ interface AppContextType {
   loadContacts: () => Promise<void>;
   loadFiles: () => Promise<void>;
   loadServices: () => Promise<void>;
+  loadBooks: () => Promise<void>;
   addContact: (contact: Contact) => Promise<number>;
   updateContact: (contact: Contact) => Promise<void>;
   deleteContact: (id: number) => Promise<void>;
@@ -47,10 +51,15 @@ interface AppContextType {
   addService: (service: Service) => Promise<number>;
   updateService: (service: Service) => Promise<void>;
   deleteService: (id: number) => Promise<void>;
+  addBook: (book: Book) => Promise<number>;
+  updateBook: (book: Book) => Promise<void>;
+  deleteBook: (id: number) => Promise<void>;
   rightPanelVisible: boolean;
   setRightPanelVisible: (visible: boolean) => void;
   selectedServiceId: number | null;
   setSelectedServiceId: (id: number | null) => void;
+  selectedBookId: number | null;
+  setSelectedBookId: (id: number | null) => void;
   confirmOptions: ConfirmOptions | null;
   showConfirm: (options: ConfirmOptions) => void;
   hideConfirm: () => void;
@@ -139,6 +148,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isDbInitialized, setIsDbInitialized] = useState(false);
 
   const contactsState = useContactState({ showToast: ui.showToast });
+  const booksState = useBookState({ showToast: ui.showToast, selectedBookId: ui.selectedBookId, setSelectedBookId: ui.setSelectedBookId });
   const servicesState = useServiceState({ 
     showToast: ui.showToast, 
     selectedServiceId: ui.selectedServiceId, 
@@ -175,6 +185,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
         setIsDbInitialized(true);
         await contactsState.loadContacts();
+        await booksState.loadBooks();
         await filesState.loadFiles();
         await servicesState.loadServices();
         await filesState.loadWatchFolders();
@@ -214,6 +225,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       contacts: contactsState.contacts,
       files: filesState.files,
       services: servicesState.services,
+      books: booksState.books,
       toast: ui.toast,
       selectedFileId: ui.selectedFileId,
       setSelectedFileId: ui.setSelectedFileId,
@@ -223,9 +235,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       loadContacts: contactsState.loadContacts,
       loadFiles: filesState.loadFiles,
       loadServices: servicesState.loadServices,
+      loadBooks: booksState.loadBooks,
       addContact: contactsState.addContact,
       updateContact: contactsState.updateContact,
       deleteContact: contactsState.deleteContact,
+      addBook: booksState.addBook,
+      updateBook: booksState.updateBook,
+      deleteBook: booksState.deleteBook,
       editingCustomer: ui.editingCustomer,
       setEditingCustomer: ui.setEditingCustomer,
       selectedCustomerId: ui.selectedCustomerId,
@@ -252,6 +268,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setRightPanelVisible: ui.setRightPanelVisible,
       selectedServiceId: ui.selectedServiceId,
       setSelectedServiceId: ui.setSelectedServiceId,
+      selectedBookId: ui.selectedBookId,
+      setSelectedBookId: ui.setSelectedBookId,
       confirmOptions: ui.confirmOptions,
       showConfirm: ui.showConfirm,
       hideConfirm: ui.hideConfirm,

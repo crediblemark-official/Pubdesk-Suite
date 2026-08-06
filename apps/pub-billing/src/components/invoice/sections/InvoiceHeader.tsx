@@ -21,19 +21,22 @@ export const InvoiceHeader: React.FC<InvoiceHeaderProps> = ({
   const headerType = profile?.headerType || 'logo_text';
 
   const getDisplayInvoiceNo = () => {
-    if (invoiceNo) return invoiceNo;
-    const format = profile?.invoiceNoFormat || 'KBM/{year}/{month}/{day}/{seq}';
-    const now = new Date();
-    const year = String(now.getFullYear());
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const seq = '0001';
+    if (profile?.invoiceNoFormat) {
+      const format = profile.invoiceNoFormat;
+      const now = new Date();
+      const year = String(now.getFullYear());
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const seq = '0001';
 
-    return format
-      .replace(/{year}/g, year)
-      .replace(/{month}/g, month)
-      .replace(/{day}/g, day)
-      .replace(/{seq}/g, seq);
+      return format
+        .replace(/{year}/g, year)
+        .replace(/{month}/g, month)
+        .replace(/{day}/g, day)
+        .replace(/{seq}/g, seq);
+    }
+    if (invoiceNo) return invoiceNo;
+    return 'KBM/2026/08/06/0001';
   };
 
   return (

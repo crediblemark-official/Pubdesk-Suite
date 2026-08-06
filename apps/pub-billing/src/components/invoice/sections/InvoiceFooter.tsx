@@ -53,7 +53,7 @@ export const InvoiceFooter: React.FC<InvoiceFooterProps> = ({
             <div style={{ fontWeight: '600', color: '#000000', marginBottom: '2px' }}>{getSignatureOfficeLabel()}</div>
             <div style={{ fontWeight: '600', color: '#000000', marginBottom: '6px' }}>{getSignatureLocationDateLabel()}</div>
 
-            <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '25px' }}>
+            <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: `${profile?.signatureSpacing ?? 40}px` }}>
               {profile?.signatureImg ? (
                 <div style={{
                   position: 'absolute',
@@ -74,7 +74,7 @@ export const InvoiceFooter: React.FC<InvoiceFooterProps> = ({
                     style={{ height: '55px', width: 'auto', maxWidth: '130px', objectFit: 'contain' }}
                   />
                 </div>
-              ) : (
+              ) : (profile?.showDefaultSignature !== false) ? (
                 <div style={{
                   fontFamily: '"Playball", cursive',
                   fontSize: '16px',
@@ -87,20 +87,20 @@ export const InvoiceFooter: React.FC<InvoiceFooterProps> = ({
                 }}>
                   {getSignatureNameLabel().split(',')[0]}
                 </div>
-              )}
-              <div style={{ height: profile?.signatureImg ? '48px' : '0px' }} />
+              ) : null}
+              <div style={{ height: profile?.signatureImg ? '48px' : (profile?.showDefaultSignature !== false ? '0px' : '0px') }} />
             </div>
 
             {/* Nama Terang */}
-            <div style={{ fontSize: '8.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', zIndex: 1, marginTop: '2px', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '8.5px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', zIndex: 1, lineHeight: '1.2', whiteSpace: 'nowrap' }}>
               {getSignatureNameLabel()}
             </div>
 
             {/* Garis / Underline */}
-            <div style={{ width: '100%', height: '1px', background: '#000000', margin: '2px 0 4px 0', zIndex: 1 }} />
+            <div style={{ width: '100%', height: '1px', background: '#000000', margin: '2px 0 3px 0', zIndex: 1 }} />
 
             {/* Jabatan */}
-            <div style={{ fontWeight: '600', fontSize: '8.5px', textTransform: 'uppercase', color: '#000000', zIndex: 1 }}>
+            <div style={{ fontWeight: '600', fontSize: '8.5px', textTransform: 'uppercase', color: '#000000', zIndex: 1, lineHeight: '1.2' }}>
               {getSignatureRoleLabel()}
             </div>
           </div>

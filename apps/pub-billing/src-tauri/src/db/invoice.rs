@@ -97,8 +97,7 @@ impl Database {
             return Err(DbError::Other(format!("Table '{}' not allowed for sync", table_name)));
         }
 
-        if table_name == "books" || table_name == "legalitas" || table_name == "tasks" || table_name == "invoices" {
-            let file_url = cloud_file_url.unwrap_or("");
+        if let Some(file_url) = cloud_file_url {
             let query = format!(
                 "UPDATE {} SET sync_status = ?1, cloud_file_url = ?2, updated_at = ?3 WHERE id = ?4",
                 table_name

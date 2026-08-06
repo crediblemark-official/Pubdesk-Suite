@@ -27,7 +27,21 @@ const DesignSection: React.FC = () => {
     watermarkColor,
     setWatermarkColor,
     watermarkOpacity,
-    setWatermarkOpacity
+    setWatermarkOpacity,
+    tableHeaderBg,
+    setTableHeaderBg,
+    tableHeaderNoBg,
+    setTableHeaderNoBg,
+    tableHeaderTextColor,
+    setTableHeaderTextColor,
+    tableBodyTextColor,
+    setTableBodyTextColor,
+    tableRowEvenBg,
+    setTableRowEvenBg,
+    tableRowOddBg,
+    setTableRowOddBg,
+    tableBorderColor,
+    setTableBorderColor
   } = useSettingsForm();
 
   const { rightPanelVisible } = useAppContext();
@@ -261,6 +275,153 @@ const DesignSection: React.FC = () => {
             <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', width: '36px', textAlign: 'right' }}>
               {watermarkOpacity}%
             </span>
+          </div>
+        </div>
+
+        {/* Separator / Section Header for Table Colors */}
+        <div style={{ gridColumn: rightPanelVisible ? undefined : '1 / -1', marginTop: '8px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>
+            📊 Pengaturan Warna Tabel Invoice
+          </h4>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Header Tabel (Kolom Utama)</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableHeaderBg}
+              onChange={(e) => setTableHeaderBg(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableHeaderBg}
+              onChange={(e) => setTableHeaderBg(e.target.value)}
+              placeholder="#1e70cd"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Header Tabel (Kolom No)</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableHeaderNoBg}
+              onChange={(e) => setTableHeaderNoBg(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableHeaderNoBg}
+              onChange={(e) => setTableHeaderNoBg(e.target.value)}
+              placeholder="#1e3a8a"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Teks Header Tabel</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableHeaderTextColor}
+              onChange={(e) => setTableHeaderTextColor(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableHeaderTextColor}
+              onChange={(e) => setTableHeaderTextColor(e.target.value)}
+              placeholder="#ffffff"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Teks Isi Tabel & Catatan</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableBodyTextColor}
+              onChange={(e) => setTableBodyTextColor(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableBodyTextColor}
+              onChange={(e) => setTableBodyTextColor(e.target.value)}
+              placeholder="#000000"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Latar Baris Genap (Zebra)</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableRowEvenBg}
+              onChange={(e) => setTableRowEvenBg(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableRowEvenBg}
+              onChange={(e) => setTableRowEvenBg(e.target.value)}
+              placeholder="#fdf2f2"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Latar Baris Ganjil</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableRowOddBg}
+              onChange={(e) => setTableRowOddBg(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableRowOddBg}
+              onChange={(e) => setTableRowOddBg(e.target.value)}
+              placeholder="#ffffff"
+            />
+          </div>
+        </div>
+
+        <div className="compact-form-group">
+          <label className="compact-label">Warna Garis Pembatas Tabel</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="color"
+              style={{ width: '32px', height: '32px', padding: '2px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--bg-card)', cursor: 'pointer' }}
+              value={tableBorderColor}
+              onChange={(e) => setTableBorderColor(e.target.value)}
+            />
+            <input
+              type="text"
+              className="compact-input"
+              style={{ flex: 1, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              value={tableBorderColor}
+              onChange={(e) => setTableBorderColor(e.target.value)}
+              placeholder="#e5e7eb"
+            />
           </div>
         </div>
       </div>

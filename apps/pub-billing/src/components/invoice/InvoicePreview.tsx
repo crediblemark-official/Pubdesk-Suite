@@ -140,7 +140,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = ({ id, previewProfile, ove
         items,
         totalAmount: totalAmt,
         paidAmount,
-        remainingAmount: totalAmt !== undefined ? Math.max(0, totalAmt - paidAmount) : undefined
+        remainingAmount: totalAmt !== undefined ? Math.max(0, totalAmt - (paidAmount || 0)) : undefined
       });
       await downloadPDFBytes(bytes, defaultFileName);
     } catch (err) {

@@ -39,8 +39,11 @@ let isInitialized = false;
 function bytesToBase64(bytes: number[] | Uint8Array): string {
   let binary = '';
   const len = bytes.length;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const CHUNK_SIZE = 0x8000; // 32768 bytes per chunk
+  const uint8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < len; i += CHUNK_SIZE) {
+    const chunk = uint8.subarray(i, i + CHUNK_SIZE);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
   }
   return window.btoa(binary);
 }

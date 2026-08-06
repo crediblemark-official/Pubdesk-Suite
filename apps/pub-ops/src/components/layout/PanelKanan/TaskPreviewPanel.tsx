@@ -33,7 +33,7 @@ const TaskPreviewPanel: React.FC = () => {
 
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTask || !newComment.trim()) return;
+    if (!selectedTask || !selectedTask.id || !newComment.trim()) return;
 
     setSubmittingComment(true);
     try {

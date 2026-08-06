@@ -378,10 +378,19 @@ pub fn build_schema(conn: &Connection) -> Result<()> {
 
     let _ = conn.execute("ALTER TABLE legalitas ADD COLUMN updated_at TEXT", []);
 
+    // Migration tracking table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_migrations (
+            name TEXT PRIMARY KEY,
+            executed_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
     // Migrasi data: penulis → contacts (one-time)
     let sudah_dimigrasi = conn
         .query_row(
-            "SELECT COUNT(*) FROM contacts WHERE address IS NOT NULL",
+            "SELECT COUNT(*) FROM app_migrations WHERE name = 'penulis_to_contacts_v1'",
             [],
             |r| r.get::<_, i64>(0),
         )
@@ -391,84 +400,89 @@ pub fn build_schema(conn: &Connection) -> Result<()> {
     if !sudah_dimigrasi {
         if let Ok(penulis_count) = conn.query_row("SELECT COUNT(*) FROM penulis", [], |r| r.get::<_, i64>(0)) {
             if penulis_count > 0 {
-                let mut stmt = conn
-                    .prepare(
-                        "SELECT id, name, email, wa_number, province, city, address, job, institution, data_source, email_valid, wa_valid, followup_status, notes, created_at, updated_at FROM penulis",
-                    )
-                    .expect("prepare penulis select");
-                let rows: Vec<(i64, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, i32, i32, Option<String>, Option<String>, String, Option<String>)> = stmt
-                    .query_map([], |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                            row.get(4)?,
-                            row.get(5)?,
-                            row.get(6)?,
-                            row.get(7)?,
-                            row.get(8)?,
-                            row.get(9)?,
-                            row.get(10)?,
-                            row.get(11)?,
-                            row.get(12)?,
-                            row.get(13)?,
-                            row.get(14)?,
-                            row.get(15)?,
-                        ))
-                    })
-                    .expect("query_map penulis")
-                    .filter_map(|r| r.ok())
-                    .collect();
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT id, name, email, wa_number, province, city, address, job, institution, data_source, email_valid, wa_valid, followup_status, notes, created_at, updated_at FROM penulis",
+                ) {
+                    let rows: Vec<(i64, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, i32, i32, Option<String>, Option<String>, String, Option<String>)> = stmt
+                        .query_map([], |row| {
+                            Ok((
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
+                                row.get(4)?,
+                                row.get(5)?,
+                                row.get(6)?,
+                                row.get(7)?,
+                                row.get(8)?,
+                                row.get(9)?,
+                                row.get(10)?,
+                                row.get(11)?,
+                                row.get(12)?,
+                                row.get(13)?,
+                                row.get(14)?,
+                                row.get(15)?,
+                            ))
+                        })
+                        .ok()
+                        .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default();
 
-                for (pid, name, email, wa, prov, city, addr, job, inst, ds, ev, wv, fs, notes, ca, _ua) in rows {
-                    let existing = conn
-                        .query_row(
-                            "SELECT id FROM contacts WHERE name = ?1 OR (wa_number IS NOT NULL AND wa_number = ?2 AND ?2 IS NOT NULL)",
-                            params![name, wa],
-                            |row| row.get::<_, i64>(0),
-                        )
-                        .ok();
+                    for (pid, name, email, wa, prov, city, addr, job, inst, ds, ev, wv, fs, notes, ca, _ua) in rows {
+                        let existing = conn
+                            .query_row(
+                                "SELECT id FROM contacts WHERE name = ?1 OR (wa_number IS NOT NULL AND wa_number = ?2 AND ?2 IS NOT NULL)",
+                                params![name, wa],
+                                |row| row.get::<_, i64>(0),
+                            )
+                            .ok();
 
-                    let mut full_address = addr.clone().unwrap_or_default();
-                    if let Some(ref c) = city {
-                        if !c.is_empty() {
-                            if !full_address.is_empty() {
-                                full_address.push_str(", ");
+                        let mut full_address = addr.clone().unwrap_or_default();
+                        if let Some(ref c) = city {
+                            if !c.is_empty() {
+                                if !full_address.is_empty() {
+                                    full_address.push_str(", ");
+                                }
+                                full_address.push_str(c);
                             }
-                            full_address.push_str(c);
                         }
-                    }
-                    if let Some(ref p) = prov {
-                        if !p.is_empty() {
-                            if !full_address.is_empty() {
-                                full_address.push_str(", ");
+                        if let Some(ref p) = prov {
+                            if !p.is_empty() {
+                                if !full_address.is_empty() {
+                                    full_address.push_str(", ");
+                                }
+                                full_address.push_str(p);
                             }
-                            full_address.push_str(p);
                         }
-                    }
-                    let full_address_opt = if full_address.is_empty() { None } else { Some(full_address) };
+                        let full_address_opt = if full_address.is_empty() { None } else { Some(full_address) };
 
-                    let new_id = if let Some(cid) = existing {
-                        conn.execute(
-                            "UPDATE contacts SET job = ?1, institution = ?2, data_source = ?3, email_valid = ?4, wa_valid = ?5, followup_status = ?6, notes = ?7, address = ?8, type = 'both' WHERE id = ?9",
-                            params![job, inst, ds, ev, wv, fs, notes, full_address_opt, cid],
-                        )
-                        .ok();
-                        cid
-                    } else {
-                        conn.execute(
-                            "INSERT INTO contacts (name, email, wa_number, address, job, institution, data_source, email_valid, wa_valid, followup_status, notes, type, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'penulis',?12,?13)",
-                            params![name, email, wa, full_address_opt, job, inst, ds, ev, wv, fs, notes, ca, ca],
-                        )
-                        .expect("insert new contact from penulis");
-                        conn.last_insert_rowid()
-                    };
-                    // Update naskah FK references to new contact id
-                    let _ = conn.execute("UPDATE naskah SET penulis_id = ?1 WHERE penulis_id = ?2", params![new_id, pid]);
+                        let new_id = if let Some(cid) = existing {
+                            conn.execute(
+                                "UPDATE contacts SET job = ?1, institution = ?2, data_source = ?3, email_valid = ?4, wa_valid = ?5, followup_status = ?6, notes = ?7, address = ?8, type = 'both' WHERE id = ?9",
+                                params![job, inst, ds, ev, wv, fs, notes, full_address_opt, cid],
+                            )
+                            .ok();
+                            cid
+                        } else {
+                            if let Ok(_) = conn.execute(
+                                "INSERT INTO contacts (name, email, wa_number, address, job, institution, data_source, email_valid, wa_valid, followup_status, notes, type, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'penulis',?12,?13)",
+                                params![name, email, wa, full_address_opt, job, inst, ds, ev, wv, fs, notes, ca, ca],
+                            ) {
+                                conn.last_insert_rowid()
+                            } else {
+                                continue;
+                            }
+                        };
+                        // Update naskah FK references to new contact id
+                        let _ = conn.execute("UPDATE naskah SET penulis_id = ?1 WHERE penulis_id = ?2", params![new_id, pid]);
+                    }
                 }
             }
         }
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO app_migrations (name, executed_at) VALUES ('penulis_to_contacts_v1', datetime('now'))",
+            [],
+        );
     }
 
     // Activity Log table

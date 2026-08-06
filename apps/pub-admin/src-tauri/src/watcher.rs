@@ -36,6 +36,9 @@ fn should_ignore_path(path: &Path) -> bool {
 fn should_process_path(path_str: &str) -> bool {
     let mut map = get_last_processed().lock().unwrap();
     let now = Instant::now();
+    if map.len() > 1000 {
+        map.retain(|_, last_time| now.duration_since(*last_time).as_secs() < 10);
+    }
     if let Some(&last_time) = map.get(path_str) {
         if now.duration_since(last_time).as_millis() < 1000 {
             return false;

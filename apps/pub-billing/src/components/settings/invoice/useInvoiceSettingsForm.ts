@@ -49,6 +49,15 @@ export function useInvoiceSettingsForm() {
   const [bankAccountOwner, setBankAccountOwner] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
   const [signatureImg, setSignatureImg] = useState('');
+  const [signatureSpacing, setSignatureSpacing] = useState<number>(40);
+  const [showDefaultSignature, setShowDefaultSignature] = useState(true);
+  const [tableHeaderBg, setTableHeaderBg] = useState('#1e70cd');
+  const [tableHeaderNoBg, setTableHeaderNoBg] = useState('#1e3a8a');
+  const [tableHeaderTextColor, setTableHeaderTextColor] = useState('#ffffff');
+  const [tableBodyTextColor, setTableBodyTextColor] = useState('#000000');
+  const [tableRowEvenBg, setTableRowEvenBg] = useState('#fdf2f2');
+  const [tableRowOddBg, setTableRowOddBg] = useState('#ffffff');
+  const [tableBorderColor, setTableBorderColor] = useState('#e5e7eb');
   const [headerType, setHeaderType] = useState<'logo_only' | 'logo_text' | 'text_only'>('logo_text');
   const [tableColumns, setTableColumns] = useState<InvoiceTableColumn[]>([]);
   const [shippingType, setShippingType] = useState<'none' | 'global' | 'item'>('global');
@@ -120,6 +129,15 @@ export function useInvoiceSettingsForm() {
       setBankAccountOwner('');
       setCompanyLogo('');
       setSignatureImg('');
+      setSignatureSpacing(40);
+      setShowDefaultSignature(true);
+      setTableHeaderBg('#1e70cd');
+      setTableHeaderNoBg('#1e3a8a');
+      setTableHeaderTextColor('#ffffff');
+      setTableBodyTextColor('#000000');
+      setTableRowEvenBg('#fdf2f2');
+      setTableRowOddBg('#ffffff');
+      setTableBorderColor('#e5e7eb');
       setHeaderType('logo_text');
       setCustomLayouts([]);
       setDefaultLayoutName('Default / Bawaan');
@@ -182,6 +200,15 @@ export function useInvoiceSettingsForm() {
         setBankAccountOwner(profile.bankAccountOwner || '');
         setCompanyLogo(profile.companyLogo || '');
         setSignatureImg(profile.signatureImg || '');
+        setSignatureSpacing(profile.signatureSpacing !== undefined ? profile.signatureSpacing : 40);
+        setShowDefaultSignature(profile.showDefaultSignature !== undefined ? profile.showDefaultSignature : true);
+        setTableHeaderBg(profile.tableHeaderBg || profile.accentColor || '#1e70cd');
+        setTableHeaderNoBg(profile.tableHeaderNoBg || profile.accentColorDark || '#1e3a8a');
+        setTableHeaderTextColor(profile.tableHeaderTextColor || '#ffffff');
+        setTableBodyTextColor(profile.tableBodyTextColor || '#000000');
+        setTableRowEvenBg(profile.tableRowEvenBg || '#fdf2f2');
+        setTableRowOddBg(profile.tableRowOddBg || '#ffffff');
+        setTableBorderColor(profile.tableBorderColor || '#e5e7eb');
         setHeaderType(profile.headerType || 'logo_text');
  
         const colsWithoutShipping = (profile.tableColumns || []).filter(c => c.key !== 'item_shipping_cost');
@@ -251,6 +278,15 @@ export function useInvoiceSettingsForm() {
     bankAccountOwner,
     companyLogo,
     signatureImg,
+    signatureSpacing,
+    showDefaultSignature,
+    tableHeaderBg,
+    tableHeaderNoBg,
+    tableHeaderTextColor,
+    tableBodyTextColor,
+    tableRowEvenBg,
+    tableRowOddBg,
+    tableBorderColor,
     headerType,
     tableColumns: getFullTableColumns(tableColumns, shippingType),
     shippingType,
@@ -309,6 +345,15 @@ export function useInvoiceSettingsForm() {
     bankAccountOwner,
     companyLogo,
     signatureImg,
+    signatureSpacing,
+    showDefaultSignature,
+    tableHeaderBg,
+    tableHeaderNoBg,
+    tableHeaderTextColor,
+    tableBodyTextColor,
+    tableRowEvenBg,
+    tableRowOddBg,
+    tableBorderColor,
     headerType,
     tableColumns,
     shippingType,
@@ -401,6 +446,15 @@ export function useInvoiceSettingsForm() {
     setBankAccountOwner(p.bankAccountOwner || '');
     setCompanyLogo(p.companyLogo || '');
     setSignatureImg(p.signatureImg || '');
+    setSignatureSpacing((p as any).signatureSpacing !== undefined ? (p as any).signatureSpacing : 40);
+    setShowDefaultSignature((p as any).showDefaultSignature !== undefined ? (p as any).showDefaultSignature : true);
+    setTableHeaderBg(p.tableHeaderBg || p.accentColor || '#1e70cd');
+    setTableHeaderNoBg(p.tableHeaderNoBg || p.accentColorDark || '#1e3a8a');
+    setTableHeaderTextColor(p.tableHeaderTextColor || '#ffffff');
+    setTableBodyTextColor(p.tableBodyTextColor || '#000000');
+    setTableRowEvenBg(p.tableRowEvenBg || '#fdf2f2');
+    setTableRowOddBg(p.tableRowOddBg || '#ffffff');
+    setTableBorderColor(p.tableBorderColor || '#e5e7eb');
     setHeaderType(p.headerType || 'logo_text');
     
     const colsWithoutShipping = (p.tableColumns || []).filter(c => c.key !== 'item_shipping_cost');
@@ -595,6 +649,24 @@ export function useInvoiceSettingsForm() {
     setCompanyLogo,
     signatureImg,
     setSignatureImg,
+    signatureSpacing,
+    setSignatureSpacing,
+    showDefaultSignature,
+    setShowDefaultSignature,
+    tableHeaderBg,
+    setTableHeaderBg,
+    tableHeaderNoBg,
+    setTableHeaderNoBg,
+    tableHeaderTextColor,
+    setTableHeaderTextColor,
+    tableBodyTextColor,
+    setTableBodyTextColor,
+    tableRowEvenBg,
+    setTableRowEvenBg,
+    tableRowOddBg,
+    setTableRowOddBg,
+    tableBorderColor,
+    setTableBorderColor,
     headerType,
     setHeaderType,
     tableColumns,

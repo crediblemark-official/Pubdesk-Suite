@@ -132,7 +132,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
                   {[
                     { module: 'kontak' as const, label: 'Kontak & Penulis', icon: '👤' },
                     { module: 'penerbit' as const, label: 'Penerbit', icon: '🏢' },
-                    { module: 'naskah' as const, label: 'Naskah', icon: '📚' },
+                    { module: 'naskah' as const, label: 'Buku / Naskah', icon: '📚' },
                     { module: 'legalitas' as const, label: 'Legalitas', icon: '⚖️' },
                   ].map((sub) => {
                     const isSubActive = appState.activeModule === sub.module;

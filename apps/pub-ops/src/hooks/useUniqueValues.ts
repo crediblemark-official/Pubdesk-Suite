@@ -10,8 +10,8 @@ export function useUniqueValues<T>(items: T[], field: keyof T): string[] {
     () => Array.from(
       new Set(
         items
-          .map((i) => i[field])
-          .filter((v): v is string => typeof v === 'string' && v.length > 0)
+          .map((i) => String(i[field] ?? ''))
+          .filter((v) => v.length > 0)
       )
     ),
     [items, field]

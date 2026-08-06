@@ -1,4 +1,4 @@
-import { InvoiceItem } from '../types/invoice.types';
+import { InvoiceItem } from '@pubhub/shared-types';
 
 const MONTHS_ID = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',

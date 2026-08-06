@@ -42,6 +42,7 @@ pub fn init_db(db_path: &PathBuf) -> Result<(), DbError> {
     let conn = rusqlite::Connection::open(db_path)?;
     let _ = conn.execute("PRAGMA journal_mode=WAL;", []);
     let _ = conn.execute("PRAGMA busy_timeout = 5000;", []);
+    let _ = conn.execute("PRAGMA foreign_keys = ON;", []);
     schema::create_tables(&conn)?;
 
     let _ = session::sync_contacts_from_invoices(&conn);

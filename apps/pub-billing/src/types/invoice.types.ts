@@ -108,6 +108,15 @@ export interface InvoiceProfile {
   bankAccountOwner: string;
   companyLogo?: string;
   signatureImg?: string;
+  signatureSpacing?: number;
+  showDefaultSignature?: boolean;
+  tableHeaderBg?: string;
+  tableHeaderNoBg?: string;
+  tableHeaderTextColor?: string;
+  tableBodyTextColor?: string;
+  tableRowEvenBg?: string;
+  tableRowOddBg?: string;
+  tableBorderColor?: string;
   headerType?: 'logo_only' | 'logo_text' | 'text_only';
   tableColumns?: InvoiceTableColumn[];
   shippingType?: 'none' | 'global' | 'item';

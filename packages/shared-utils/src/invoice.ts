@@ -51,14 +51,33 @@ export const evaluateItemFormula = (formulaStr: string, item: InvoiceItem): any 
 };
 
 export const getInvoiceMetadata = (invoice: any) => {
-  try {
-    if (invoice.file_path) return JSON.parse(invoice.file_path);
-  } catch (e) {
-    console.error('Gagal memuat metadata invoice:', e);
+  if (!invoice) {
+    return {
+      invoiceNo: '-', invoiceDate: '-', invoiceHal: '-',
+      invoiceLampiran: '-', paymentStatus: 'BELUM LUNAS',
+      customerName: 'Umum', customerWa: '-', customerAddress: '',
+      spesifikasiFasilitas: ''
+    };
   }
+
+  try {
+    if (typeof invoice.file_path === 'string') {
+      const trimmed = invoice.file_path.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      }
+    }
+  } catch (e) {
+    // Non-JSON or corrupted file_path
+  }
+
+  const defaultStatus = invoice.payment_status || 'BELUM LUNAS';
   return {
     invoiceNo: '-', invoiceDate: '-', invoiceHal: '-',
-    invoiceLampiran: '-', paymentStatus: 'BERMASALAH',
+    invoiceLampiran: '-', paymentStatus: defaultStatus,
     customerName: 'Umum', customerWa: '-', customerAddress: '',
     spesifikasiFasilitas: ''
   };

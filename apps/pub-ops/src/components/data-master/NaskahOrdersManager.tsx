@@ -27,6 +27,7 @@ const STATUS_LIST = ['Belum Dimulai', 'Sedang Dikerjakan', 'Selesai', 'Batal'];
 const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery = '' }) => {
   const { naskah, penulis, penerbit, addNaskah, updateNaskah, deleteNaskah } = useDataMasterContext();
   const { 
+    books,
     showConfirm, 
     showToast, 
     setSelectedNaskahId, 
@@ -277,11 +278,28 @@ const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery =
   const [activeStatuses, setActiveStatuses] = useState<string[]>([]);
   const [genreFilter, setGenreFilter] = useState('');
 
+  const allBukuNaskah = useMemo(() => {
+    const booksAsNaskah: Naskah[] = (books || []).map((b) => ({
+      id: b.id ? b.id + 1000000 : Math.floor(Math.random() * 100000),
+      title: b.title,
+      penulis_id: b.author_id,
+      order_type: 'Karya / Buku',
+      copies: 0,
+      book_size: b.weight_grams ? `${b.weight_grams}g` : '-',
+      status: 'Selesai',
+      genre: 'Karya',
+      created_at: b.created_at || new Date().toISOString(),
+      naskah_id_code: b.isbn ? `ISBN: ${b.isbn}` : `BOOK-${b.id}`
+    }));
+
+    return [...naskah, ...booksAsNaskah];
+  }, [naskah, books]);
+
   // Daftar genre unik dari data yang ada
   const genres = useMemo(() => {
-    const set = new Set(naskah.map((o) => o.genre).filter(Boolean) as string[]);
+    const set = new Set(allBukuNaskah.map((o) => o.genre).filter(Boolean) as string[]);
     return Array.from(set).sort();
-  }, [naskah]);
+  }, [allBukuNaskah]);
 
   const getPenulisName = (id?: number) => {
     if (!id) return '-';
@@ -302,9 +320,9 @@ const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery =
     );
   };
 
-  // Filter naskah
+  // Filter naskah / buku
   const filteredOrders = useMemo(() => {
-    return naskah.filter((o) => {
+    return allBukuNaskah.filter((o) => {
       const q = searchQuery.toLowerCase();
       const matchSearch =
         !q ||
@@ -318,15 +336,15 @@ const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery =
       return matchSearch && matchStatus && matchGenre;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [naskah, searchQuery, activeStatuses, genreFilter, penulis, penerbit]);
+  }, [allBukuNaskah, searchQuery, activeStatuses, genreFilter, penulis, penerbit]);
 
   // Hitung per-status untuk badge info
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     STATUS_LIST.forEach((s) => { counts[s] = 0; });
-    naskah.forEach((o) => { if (counts[o.status] !== undefined) counts[o.status]++; });
+    allBukuNaskah.forEach((o) => { if (counts[o.status] !== undefined) counts[o.status]++; });
     return counts;
-  }, [naskah]);
+  }, [allBukuNaskah]);
 
   const handleAddNew = () => {
     setCurrentOrder(null);
@@ -459,8 +477,8 @@ const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery =
         <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: '600', whiteSpace: 'nowrap' }}>
           <strong style={{ color: 'var(--text-primary)' }}>{filteredOrders.length}</strong>
           {' '}dari{' '}
-          <strong style={{ color: 'var(--text-primary)' }}>{naskah.length}</strong>
-          {' '}naskah
+          <strong style={{ color: 'var(--text-primary)' }}>{allBukuNaskah.length}</strong>
+          {' '}buku/naskah
         </span>
 
         <FilterDivider />
@@ -536,8 +554,8 @@ const NaskahOrdersManager: React.FC<NaskahOrdersManagerProps> = ({ searchQuery =
               <TableEmptyState
                 colSpan={9}
                 icon="📚"
-                message="Tidak ada data naskah"
-                description={hasActiveFilter ? 'Tidak ada hasil untuk filter yang dipilih.' : 'Belum ada naskah terdaftar. Klik Tambah Naskah untuk menambahkan.'}
+                message="Tidak ada data buku / naskah"
+                description={hasActiveFilter ? 'Tidak ada hasil untuk filter yang dipilih.' : 'Belum ada buku / naskah terdaftar. Klik Tambah Naskah untuk menambahkan.'}
               />
             ) : (
               filteredOrders.map((o) => (

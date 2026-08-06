@@ -24,11 +24,15 @@ export interface FlatRow {
 export const getCommonPrefix = (paths: string[]): string => {
   if (paths.length === 0) return '';
   
-  // Hanya ambil path yang valid
-  const validPaths = paths.filter(p => p && p.startsWith('/'));
-  if (validPaths.length === 0) return '';
+  // Hanya ambil path absolut yang valid (Unix: /path, Windows: C:\path atau C:/path)
+  const isAbsolute = (p: string) => /^([a-zA-Z]:[\\\/]|\/)/.test(p);
+  const normalizedPaths = paths
+    .filter(p => p && isAbsolute(p))
+    .map(p => p.replace(/\\/g, '/'));
 
-  const splitPaths = validPaths.map(p => p.split('/'));
+  if (normalizedPaths.length === 0) return '';
+
+  const splitPaths = normalizedPaths.map(p => p.split('/'));
   const first = splitPaths[0];
   let commonLength = 0;
 
@@ -42,11 +46,7 @@ export const getCommonPrefix = (paths: string[]): string => {
     }
   }
 
-  // Jika folder induk terakhir adalah nama file (tidak mungkin tapi untuk keamanan)
-  // kita batasi agar tidak menyertakan nama file.
   const commonSegments = first.slice(0, commonLength);
-  
-  // Gabungkan kembali menjadi path absolut
   return commonSegments.join('/');
 };
 

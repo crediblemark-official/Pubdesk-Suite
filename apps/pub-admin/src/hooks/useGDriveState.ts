@@ -157,7 +157,7 @@ export function useGDriveState({ showToast, fileCategory }: UseGDriveStateProps)
   const refreshPromisesRef = useRef<Record<string, Promise<string | null>>>({});
 
   const refreshAccountToken = async (email: string): Promise<string | null> => {
-    if (refreshPromisesRef.current[email]) {
+    if (email in refreshPromisesRef.current) {
       return refreshPromisesRef.current[email];
     }
 
@@ -222,7 +222,7 @@ export function useGDriveState({ showToast, fileCategory }: UseGDriveStateProps)
     }
 
     const key = 'default_unregistered';
-    if (refreshPromisesRef.current[key]) {
+    if (key in refreshPromisesRef.current) {
       return refreshPromisesRef.current[key];
     }
 

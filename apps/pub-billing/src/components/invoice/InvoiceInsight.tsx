@@ -54,7 +54,13 @@ const InvoiceInsight: React.FC<InvoiceInsightProps> = ({
         totalBelumLunas += inv.total;
         countBelumLunas++;
       } else if (status === 'DP') {
-        totalDp += inv.total;
+        const paid = Number(metadata.paidAmount ?? (inv as any).paid_amount ?? 0);
+        if (paid > 0 && paid < inv.total) {
+          totalDp += paid;
+          totalBelumLunas += (inv.total - paid);
+        } else {
+          totalDp += inv.total;
+        }
         countDp++;
       } else {
         totalBermasalah += inv.total;
