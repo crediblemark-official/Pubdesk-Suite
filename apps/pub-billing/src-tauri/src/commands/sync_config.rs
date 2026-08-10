@@ -7,6 +7,12 @@ pub async fn get_sync_config_full(state: State<'_, AppState>) -> Result<String, 
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or("Database tidak diinisialisasi")?;
     let cfg = client::SyncRuntimeConfig::load(&db.conn);
+    let hide_other: String = db.conn.query_row(
+        "SELECT value FROM p2p_config WHERE key = 'hide_sync_menu_in_other_apps'",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_else(|_| "false".to_string());
+
     serde_json::to_string(&serde_json::json!({
         "enabled": cfg.enabled,
         "workspace_id": cfg.workspace_id,
@@ -15,6 +21,7 @@ pub async fn get_sync_config_full(state: State<'_, AppState>) -> Result<String, 
         "gas_token": cfg.gas_token,
         "last_push_ts": cfg.last_push_ts,
         "last_pull_ts": cfg.last_pull_ts,
+        "hide_sync_menu_in_other_apps": hide_other == "true"
     })).map_err(|e| e.to_string())
 }
 
@@ -25,6 +32,7 @@ pub fn set_sync_config(
     worker_url: String,
     gas_url: String,
     gas_token: String,
+    hide_sync_menu_in_other_apps: Option<bool>,
 ) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or("Database tidak diinisialisasi")?;
@@ -32,6 +40,49 @@ pub fn set_sync_config(
     db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_worker_url', ?1)", rusqlite::params![worker_url]).map_err(|e| e.to_string())?;
     db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_url', ?1)", rusqlite::params![gas_url]).map_err(|e| e.to_string())?;
     db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_token', ?1)", rusqlite::params![gas_token]).map_err(|e| e.to_string())?;
+    let mut hide_val = None;
+    if let Some(hide) = hide_sync_menu_in_other_apps {
+        let val = if hide { "true" } else { "false" };
+        db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('hide_sync_menu_in_other_apps', ?1)", rusqlite::params![val]).map_err(|e| e.to_string())?;
+        hide_val = Some(val);
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let _ = db.conn.execute(
+        "INSERT INTO sync_outbox (table_name, row_id, action, data_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            "app_config",
+            1,
+            "UPSERT",
+            serde_json::json!({ "key": "gas_url", "value": gas_url, "updated_at": now }).to_string(),
+            now
+        ]
+    );
+
+    let _ = db.conn.execute(
+        "INSERT INTO sync_outbox (table_name, row_id, action, data_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            "app_config",
+            2,
+            "UPSERT",
+            serde_json::json!({ "key": "gas_token", "value": gas_token, "updated_at": now }).to_string(),
+            now
+        ]
+    );
+
+    if let Some(val) = hide_val {
+        let _ = db.conn.execute(
+            "INSERT INTO sync_outbox (table_name, row_id, action, data_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                "app_config",
+                3,
+                "UPSERT",
+                serde_json::json!({ "key": "hide_sync_menu_in_other_apps", "value": val, "updated_at": now }).to_string(),
+                now
+            ]
+        );
+    }
+
     Ok(())
 }
 

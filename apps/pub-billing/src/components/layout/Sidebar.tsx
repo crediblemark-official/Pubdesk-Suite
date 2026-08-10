@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../contexts/AppContext';
 
 interface SidebarProps {
@@ -7,6 +7,18 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const { appState, setActiveModule } = useAppContext();
+  const [hideSyncMenu, setHideSyncMenu] = useState(false);
+
+  useEffect(() => {
+    import('@tauri-apps/api/core').then(({ invoke }) => {
+      invoke<string>('get_sync_config_full').then((raw) => {
+        try {
+          const c = JSON.parse(raw);
+          setHideSyncMenu(!!c.hide_sync_menu_in_other_apps);
+        } catch {}
+      });
+    }).catch(() => {});
+  }, []);
 
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>(() => {
     const active = appState.activeModule;
@@ -25,6 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
 
   const bottomItems = [
     { id: 'settings-invoice' as const, label: 'Setelan Invoice', icon: '📄' },
+    ...(!hideSyncMenu ? [{ id: 'settings-p2p' as const, label: 'Sinkronisasi', icon: '🔗' }] : []),
     { id: 'activity-log' as const, label: 'Activity Log', icon: '📋' },
   ];
 

@@ -155,6 +155,7 @@ pub async fn call_gas_api(
     // Kita perlu: 1) POST tanpa follow redirect, 2) ambil Location, 3) GET ke Location.
     // Untuk GET: langsung follow redirect.
     let client_no_redirect = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| {
@@ -163,6 +164,7 @@ pub async fn call_gas_api(
         })?;
 
     let client_follow = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| {

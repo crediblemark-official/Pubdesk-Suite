@@ -403,6 +403,62 @@ function doPost(e) {
       });
     }
 
+    // 5. Operasi pull_changes: Mengunduh data dari Cloud ke PC Lokal
+    if (action === "pull_changes") {
+      const sheetNameMap = {
+        "Contacts": "contacts",
+        "Books": "books",
+        "Projects": "projects",
+        "Files": "files",
+        "Invoices": "invoices",
+        "Services": "services",
+        "Penerbit": "penerbit",
+        "Naskah": "naskah",
+        "Tim": "tim",
+        "Tasks": "tasks",
+        "Legalitas": "legalitas",
+        "CetakDistribusi": "cetak_distribusi",
+        "AppConfig": "app_config"
+      };
+
+      const changes = [];
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+      Object.keys(SHEETS_CONFIG).forEach(function(sheetName) {
+        const sheet = ss.getSheetByName(sheetName);
+        if (!sheet) return;
+        const values = sheet.getDataRange().getValues();
+        if (values.length <= 1) return;
+
+        const headers = values[0];
+        const tableName = sheetNameMap[sheetName] || sheetName.toLowerCase();
+
+        for (var r = 1; r < values.length; r++) {
+          var row = values[r];
+          var obj = {};
+          headers.forEach(function(h, i) {
+            if (row[i] !== "" && row[i] !== null && row[i] !== undefined) {
+              obj[h] = row[i];
+            }
+          });
+          if (!obj.id && !obj.key) continue;
+
+          changes.push({
+            table_name: tableName,
+            row_id: Number(obj.id) || 0,
+            action: "UPSERT",
+            data_json: JSON.stringify(obj),
+            created_at: obj.created_at || new Date().toISOString()
+          });
+        }
+      });
+
+      return createJsonResponse({
+        status: "success",
+        changes: changes
+      });
+    }
+
     return createJsonResponse({ status: "error", message: "Aksi POST tidak dikenali" }, 400);
 
   } catch (err) {

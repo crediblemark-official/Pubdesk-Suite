@@ -229,9 +229,50 @@ fn apply_upsert(conn: &Connection, table: &str, _row_id: i64, data_json: &str) {
     let data: serde_json::Value = match serde_json::from_str(data_json) { Ok(v) => v, Err(_) => return };
     let obj = match data.as_object() { Some(o) => o, None => return };
 
+    if table == "app_config" || table == "p2p_config" {
+        let key = obj.get("key").and_then(|k| k.as_str()).unwrap_or("");
+        let val = obj.get("value").and_then(|v| v.as_str()).unwrap_or("");
+        if !key.is_empty() {
+            let config_key = match key {
+                "gas_url" => "sync_gas_url",
+                "gas_token" => "sync_gas_token",
+                "hide_sync_menu_in_other_apps" => "hide_sync_menu_in_other_apps",
+                "sync_gas_url" => "sync_gas_url",
+                "sync_gas_token" => "sync_gas_token",
+                other => other,
+            };
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO p2p_config (key, value) VALUES (?1, ?2)",
+                rusqlite::params![config_key, val]
+            );
+        }
+        return;
+    }
+
+    let mut valid_cols = std::collections::HashSet::new();
+    let pragma_sql = format!("PRAGMA table_info({})", table);
+    if let Ok(mut stmt) = conn.prepare(&pragma_sql) {
+        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(1)) {
+            for c in rows.flatten() {
+                valid_cols.insert(c);
+            }
+        }
+    }
+
     let mut names = Vec::new();
     let mut vals = Vec::new();
     for (k, v) in obj {
+        if !valid_cols.is_empty() && !valid_cols.contains(k) {
+            continue;
+        }
+        if k == "id" {
+            if let serde_json::Value::String(ref s) = v {
+                if s.parse::<i64>().is_err() {
+                    // Abaikan ID string non-numerik untuk kolom id INTEGER PRIMARY KEY
+                    continue;
+                }
+            }
+        }
         names.push(k.clone());
         vals.push(match v {
             serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),

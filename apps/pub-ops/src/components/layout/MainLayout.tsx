@@ -28,6 +28,7 @@ import HomeDashboard from '../home/HomeDashboard';
 // Modul Auth Lokal
 import { useAuth } from '../../contexts/AuthContext';
 import LoginPage from '../auth/LoginPage';
+import { SyncConnectionPanel } from '@pubhub/shared-ui/src/shared/SyncConnectionPanel';
 
 const MainLayout = () => {
   const { appState, rightPanelVisible, toast, confirmOptions, hideConfirm } = useAppContext();
@@ -80,6 +81,32 @@ const MainLayout = () => {
   };
 
 
+  const renderSettingsModule = (title: string, icon: string, component: React.ReactNode) => {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-dark)', color: 'var(--text-primary)' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-panel)',
+          height: 44,
+          boxSizing: 'border-box',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>{icon}</span>
+            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{title}</span>
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
+          {component}
+        </div>
+      </div>
+    );
+  };
+
   const renderModule = () => {
     switch (appState.activeModule) {
       case 'home':
@@ -118,6 +145,8 @@ const MainLayout = () => {
       case 'tambah-tugas':
       case 'edit-tugas':
         return <TaskFormPage />;
+      case 'settings-p2p':
+        return renderSettingsModule('Sinkronisasi', '🔗', <SyncConnectionPanel />);
       default:
         return <HomeDashboard />;
     }

@@ -14,6 +14,7 @@ export type AppModule =
   | 'laporan-operasional'
   | 'master-data-parent'
   | 'invoice-parent'
+  | 'settings-p2p';
 
 
 export interface AppState {

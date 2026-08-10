@@ -26,8 +26,8 @@ const STORAGE_KEYS = {
   TOKEN: 'pubdesk_gas_token'
 };
 
-const DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbznI3Q4IqjG1T3BvduLlymBJUaMaNdDNjj4OF9krkfjUsXIvAamD8emMcZedwd5El0e2g/exec';
-const DEFAULT_TOKEN = 'PubDesk_Secret_Token_2026';
+const DEFAULT_URL = '';
+const DEFAULT_TOKEN = '';
 
 let cachedUrl = DEFAULT_URL;
 let cachedToken = DEFAULT_TOKEN;

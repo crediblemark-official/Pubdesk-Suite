@@ -8,6 +8,7 @@ export type AppModule =
   | 'files-parent'
   | 'settings-local-folders'
   | 'settings-gdrive'
+  | 'settings-p2p';
 
 
 export interface AppState {

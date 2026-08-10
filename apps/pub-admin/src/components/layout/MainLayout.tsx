@@ -101,7 +101,7 @@ const MainLayout = () => {
       case 'activity-log':
         return <ActivityLog />;
       case 'settings-p2p':
-        return renderSettingsModule('Sinkronisasi', '🔗', <SyncConnectionPanel />);
+        return renderSettingsModule('Sinkronisasi', '🔗', <SyncConnectionPanel isAdmin={true} />);
       case 'settings-data-reset':
         return renderSettingsModule('Kustomisasi & Data', '🎨', <DataResetTab />);
       default:

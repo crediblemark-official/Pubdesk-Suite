@@ -33,7 +33,8 @@ export type AppModule =
   | 'produksi-parent'
   | 'master-data-parent'
   | 'invoice-parent'
-  | 'files-parent';
+  | 'files-parent'
+  | 'settings-p2p';
 
 export interface AppState {
   activeModule: AppModule;

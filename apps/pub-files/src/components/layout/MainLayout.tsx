@@ -10,6 +10,7 @@ import GDriveSettingsTab from '../settings/tabs/GDriveSettingsTab';
 import LocalFoldersTab from '../settings/tabs/LocalFoldersTab';
 import HomeDashboard from '../home/HomeDashboard';
 import { useAuth } from '../../contexts/AuthContext';
+import { SyncConnectionPanel } from '@pubhub/shared-ui/src/shared/SyncConnectionPanel';
 import LoginPage from '../auth/LoginPage';
 
 const MainLayout = () => {
@@ -102,6 +103,8 @@ const MainLayout = () => {
         return renderSettingsModule('Folder Lokal Dipantau', '📁', <LocalFoldersTab />);
       case 'settings-gdrive':
         return renderSettingsModule('Google Drive', '☁️', <GDriveSettingsTab />);
+      case 'settings-p2p':
+        return renderSettingsModule('Sinkronisasi', '🔗', <SyncConnectionPanel />);
       default:
         return <FileManager searchQuery={fileSearchQuery} />;
     }

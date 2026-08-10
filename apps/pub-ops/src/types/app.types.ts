@@ -22,7 +22,8 @@ export type AppModule =
   | 'tambah-tugas'
   | 'edit-tugas'
   | 'produksi-parent'
-  | 'master-data-parent';
+  | 'master-data-parent'
+  | 'settings-p2p';
 
 export interface AppState {
   activeModule: AppModule;

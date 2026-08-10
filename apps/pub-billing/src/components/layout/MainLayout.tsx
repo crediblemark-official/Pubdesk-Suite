@@ -17,8 +17,9 @@ import DashboardInvoice from '../invoice/DashboardInvoice';
 import HomeDashboard from '../home/HomeDashboard';
 import { useAuth } from '../../contexts/AuthContext';
 import LoginPage from '../auth/LoginPage';
+import { SyncConnectionPanel } from '@pubhub/shared-ui/src/shared/SyncConnectionPanel';
 
-const MainLayout = () => {
+const MainLayout: React.FC = () => {
   const { appState, rightPanelVisible, toast, confirmOptions, hideConfirm } = useAppContext();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [rightPanelWidth, setRightPanelWidth] = useState(450);
@@ -123,12 +124,14 @@ const MainLayout = () => {
         return <LaporanOperasional />;
       case 'settings-invoice':
         return renderSettingsModule('Setelan Invoice', '📄', <InvoiceSettings />);
+      case 'settings-p2p':
+        return renderSettingsModule('Sinkronisasi', '🔗', <SyncConnectionPanel />);
       default:
         return <InvoiceGenerator />;
     }
   };
 
-  const isSettingsModule = appState.activeModule === 'settings-invoice';
+  const isSettingsModule = appState.activeModule === 'settings-invoice' || appState.activeModule === 'settings-p2p';
   const isModuleLocked = isSessionRunning === false && !isSettingsModule;
 
   return (
