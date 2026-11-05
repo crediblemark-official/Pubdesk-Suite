@@ -70,10 +70,10 @@ export async function generateInvoicePDFBytes(elementId: string): Promise<Uint8A
     // ── LANGKAH 1: Pre-render SVG inline → PNG beresolusi tinggi ────────────────────────────
     // Masalah: html2canvas merender SVG path di resolusi CSS (1x) lalu upscale → blur + jagged.
     // Solusi:
-    //   A) Set intrinsic SVG size ke 4x → browser render vector path di resolusi penuh
-    //   B) Gunakan Blob URL (bukan data: URI) → tidak taint canvas di WebKitGTK
-    //   C) drawImage langsung ke canvas 4x tanpa ctx.scale (canvas sudah di ukuran target)
-    const RENDER_SCALE = 4;
+    //   A) Set intrinsic SVG size ke 2x → resolusi tajam tanpa membebani GPU & memori WebView2
+    //   B) Gunakan Blob URL (bukan data: URI) → tidak taint canvas di WebKitGTK/WebView2
+    //   C) drawImage langsung ke canvas 2x tanpa ctx.scale (canvas sudah di ukuran target)
+    const RENDER_SCALE = 2;
     const svgEls = Array.from(clonedElement.querySelectorAll<SVGSVGElement>('svg'));
     let svgPreRenderOk = false;
 
@@ -189,24 +189,19 @@ export async function generateInvoicePDFBytes(elementId: string): Promise<Uint8A
       format: 'a4',
     });
 
-    if (pageElements.length > 1) {
-      for (let i = 0; i < pageElements.length; i++) {
-        if (i > 0) {
-          pdf.addPage('a4', 'portrait');
-        }
-        const captureCanvas = await html2canvas(pageElements[i], {
-          scale: 4,
-          useCORS: true,
-          allowTaint: false,
-          backgroundColor: '#ffffff',
-          logging: false,
-        });
-        const imgData = captureCanvas.toDataURL('image/png');
-        pdf.addImage(imgData, 'PNG', 0, 0, 595, 842);
+    // Jika ditemukan elemen .a4-page (baik 1 halaman maupun lebih), gunakan targets tersebut.
+    // Jika tidak ada (fallback), baru gunakan clonedElement.
+    const targets: HTMLElement[] = pageElements.length > 0
+      ? Array.from(pageElements)
+      : [clonedElement];
+
+    for (let i = 0; i < targets.length; i++) {
+      if (i > 0) {
+        pdf.addPage('a4', 'portrait');
       }
-    } else {
-      const captureCanvas = await html2canvas(clonedElement, {
-        scale: 4,
+      // Skala 2x menghasilkan resolusi tajam (~150-200 DPI) tanpa memicu lonjakan memori OOM WebView2
+      const captureCanvas = await html2canvas(targets[i], {
+        scale: 2,
         useCORS: true,
         allowTaint: false,
         backgroundColor: '#ffffff',
@@ -226,13 +221,56 @@ export async function generateInvoicePDFBytes(elementId: string): Promise<Uint8A
   }
 }
 
+/**
+ * Konversi Uint8Array ke Base64 secara hemat memori (chunked)
+ * Mencegah error Maximum call stack size dan lonjakan memori V8 heap
+ */
+export function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Menyimpan berkas biner ke path disk via Tauri secara aman
+ * Menggunakan Base64 string untuk menghindari serialisasi jutaan angka JSON IPC
+ */
+export async function saveBinaryFileSafely(path: string, bytes: Uint8Array): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const base64Content = uint8ArrayToBase64(bytes);
+  try {
+    await invoke('write_binary_file_base64', { path, base64Content });
+  } catch (err) {
+    console.warn('[saveBinaryFileSafely] Base64 command gagal, mencoba fallback Array.from:', err);
+    await invoke('write_binary_file', { path, bytes: Array.from(bytes) });
+  }
+}
+
+/**
+ * Membuat berkas fisik di folder penyimpanan aplikasi PubDesk secara aman via Base64
+ */
+export async function createPhysicalFileSafely(filename: string, bytes: Uint8Array, folder: string): Promise<string> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const base64Content = uint8ArrayToBase64(bytes);
+  try {
+    return await invoke<string>('create_physical_file_base64', { filename, base64Content, folder });
+  } catch (err) {
+    console.warn('[createPhysicalFileSafely] Base64 command gagal, mencoba fallback Array.from:', err);
+    return await invoke<string>('create_physical_file', { filename, bytes: Array.from(bytes), folder });
+  }
+}
+
 export async function downloadPDFBytes(bytes: Uint8Array, defaultFileName: string): Promise<boolean> {
   const isTauri = typeof window !== 'undefined' && (!!(window as any).__TAURI_INTERNALS__ || !!(window as any).__TAURI__);
 
   if (isTauri) {
     try {
       const { save, ask } = await import('@tauri-apps/plugin-dialog');
-      const { invoke } = await import('@tauri-apps/api/core');
       const { openPath } = await import('@tauri-apps/plugin-opener');
 
       const filePath = await save({
@@ -244,17 +282,21 @@ export async function downloadPDFBytes(bytes: Uint8Array, defaultFileName: strin
         return false;
       }
 
-      await invoke('write_binary_file', { path: filePath, bytes: Array.from(bytes) });
+      await saveBinaryFileSafely(filePath, bytes);
 
-      const shouldOpen = await ask('PDF berhasil disimpan. Apakah Anda ingin langsung membukanya?', {
-        title: 'Buka PDF',
-        kind: 'info',
-        okLabel: 'Buka',
-        cancelLabel: 'Tutup'
-      });
+      try {
+        const shouldOpen = await ask('PDF berhasil disimpan. Apakah Anda ingin langsung membukanya?', {
+          title: 'Buka PDF',
+          kind: 'info',
+          okLabel: 'Buka',
+          cancelLabel: 'Tutup'
+        });
 
-      if (shouldOpen) {
-        await openPath(filePath);
+        if (shouldOpen) {
+          await openPath(filePath);
+        }
+      } catch (dialogErr) {
+        console.warn('Gagal menampilkan dialog konfirmasi buka PDF:', dialogErr);
       }
 
       return true;
@@ -270,8 +312,10 @@ export async function downloadPDFBytes(bytes: Uint8Array, defaultFileName: strin
     a.download = defaultFileName;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1500);
     return true;
   }
 }

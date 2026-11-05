@@ -235,12 +235,9 @@ const InvoiceGenerator: React.FC = () => {
         invoiceId = await addInvoice(invoiceData as any);
       }
 
-      // Generate & download PDF
-      const { generateInvoicePDFBytes } = await import('../../utils/pdfGenerator');
+      // Generate & simpan PDF secara aman (Base64 + scale 2x)
+      const { generateInvoicePDFBytes, createPhysicalFileSafely } = await import('../../utils/pdfGenerator');
       const bytes = await generateInvoicePDFBytes('invoice-preview-export');
-      const blob = new Blob([bytes as any], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const totalAmount = calculateTotal();
       const filename = formatPdfFilename(activeProfile?.pdfFilenameFormat, {
         profileName: activeProfile?.name,
@@ -260,20 +257,9 @@ const InvoiceGenerator: React.FC = () => {
         paidAmount: paidAmount,
         remainingAmount: Math.max(0, totalAmount - paidAmount)
       });
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
 
-      // Simpan ke disk & register file entry
-      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-      const physicalPath = await tauriInvoke<string>('create_physical_file', {
-        filename,
-        bytes: Array.from(bytes),
-        folder: 'invoices'
-      });
+      // Simpan ke disk & register file entry via Base64 IPC yang aman (menghindari OOM JSON IPC)
+      const physicalPath = await createPhysicalFileSafely(filename, bytes, 'invoices');
       const existingFile = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId) && f.filename === filename);
       if (!existingFile) {
         await addFile({
@@ -288,7 +274,23 @@ const InvoiceGenerator: React.FC = () => {
         });
       }
 
-      showToast('Invoice berhasil disimpan & PDF terdownload!', 'success');
+      // Download browser fallback hanya jika dijalankan di mode web browser (bukan Tauri desktop)
+      const isTauri = typeof window !== 'undefined' && (!!(window as any).__TAURI_INTERNALS__ || !!(window as any).__TAURI__);
+      if (!isTauri) {
+        const blob = new Blob([bytes as any], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1500);
+      }
+
+      showToast('Invoice berhasil disimpan & PDF dibuat!', 'success');
       resetInvoice();
     } catch (error) {
       console.error(error);

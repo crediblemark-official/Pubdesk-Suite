@@ -132,48 +132,55 @@ fn extract_pdf(path: &Path) -> Result<String, String> {
     // Proses konten tidak terkompresi
     extract_literal_strings(&bytes, &mut text);
 
-    // Cari dan dekompresi stream FlateDecode
-    let content_str = String::from_utf8_lossy(&bytes);
-    let lower = content_str.to_lowercase();
+    // Cari dan dekompresi stream FlateDecode langsung pada byte slice murni (mencegah out-of-bounds panic & UTF-8 shift)
+    let stream_tag = b"stream";
+    let endstream_tag = b"endstream";
+    let flate_tag_1 = b"/FlateDecode";
+    let flate_tag_2 = b"/flatedecode";
+
     let mut search_pos = 0;
-    while let Some(stream_start) = lower[search_pos..].find("stream") {
-        let abs_start = search_pos + stream_start;
+    while search_pos + stream_tag.len() < bytes.len() {
+        if let Some(pos) = bytes[search_pos..]
+            .windows(stream_tag.len())
+            .position(|w| w == stream_tag)
+        {
+            let abs_stream_start = search_pos + pos;
+            let lookback_start = abs_stream_start.saturating_sub(256);
+            let header_area = &bytes[lookback_start..abs_stream_start];
+            let is_flate = header_area.windows(flate_tag_1.len()).any(|w| w == flate_tag_1)
+                || header_area.windows(flate_tag_2.len()).any(|w| w == flate_tag_2);
 
-        // Periksa apakah stream menggunakan FlateDecode
-        let before_stream = &lower[..abs_start].trim_end();
-        let is_flate = before_stream.contains("/flatedecode");
-
-        // Cari awal data stream (setelah "stream" dan whitespace)
-        let data_start = abs_start + 6;
-        let data_start = data_start
-            + bytes[data_start..]
-                .iter()
-                .take_while(|&&b| b == b' ' || b == b'\r' || b == b'\n')
-                .count();
-
-        // Cari "endstream"
-        if let Some(end_rel) = lower[data_start..].find("endstream") {
-            let data_end = data_start + end_rel;
-            // Trim trailing whitespace
-            let data_end = data_end
-                - bytes[..data_end]
-                    .iter()
-                    .rev()
-                    .take_while(|&&b| b == b' ' || b == b'\r' || b == b'\n')
-                    .count();
-
-            let stream_data = &bytes[data_start..data_end];
-
-            if is_flate && !stream_data.is_empty() {
-                // Dekompresi FlateDecode
-                let mut decoder = ZlibDecoder::new(stream_data);
-                let mut decompressed = Vec::new();
-                if decoder.read_to_end(&mut decompressed).is_ok() {
-                    extract_literal_strings(&decompressed, &mut text);
-                }
+            let mut data_start = abs_stream_start + stream_tag.len();
+            while data_start < bytes.len() && (bytes[data_start] == b' ' || bytes[data_start] == b'\r' || bytes[data_start] == b'\n') {
+                data_start += 1;
             }
 
-            search_pos = data_start + end_rel + 9;
+            if data_start >= bytes.len() {
+                break;
+            }
+
+            if let Some(end_rel) = bytes[data_start..]
+                .windows(endstream_tag.len())
+                .position(|w| w == endstream_tag)
+            {
+                let mut data_end = data_start + end_rel;
+                while data_end > data_start && (bytes[data_end - 1] == b' ' || bytes[data_end - 1] == b'\r' || bytes[data_end - 1] == b'\n') {
+                    data_end -= 1;
+                }
+
+                if is_flate && data_end > data_start {
+                    let stream_data = &bytes[data_start..data_end];
+                    let mut decoder = ZlibDecoder::new(stream_data);
+                    let mut decompressed = Vec::new();
+                    if decoder.read_to_end(&mut decompressed).is_ok() {
+                        extract_literal_strings(&decompressed, &mut text);
+                    }
+                }
+
+                search_pos = data_start + end_rel + endstream_tag.len();
+            } else {
+                break;
+            }
         } else {
             break;
         }

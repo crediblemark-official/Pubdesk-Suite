@@ -42,6 +42,21 @@ pub async fn write_binary_file(path: String, bytes: Vec<u8>) -> Result<(), Strin
     Ok(())
 }
 
+#[tauri::command]
+pub async fn write_binary_file_base64(path: String, base64_content: String) -> Result<(), String> {
+    use std::fs::File as StdFile;
+    use std::io::Write;
+    use base64::prelude::*;
+
+    let bytes = BASE64_STANDARD
+        .decode(base64_content.trim())
+        .map_err(|e| format!("Invalid base64: {}", e))?;
+
+    let mut file = StdFile::create(path).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct AppConfig {
     pub work_files_dir: Option<String>,
@@ -106,6 +121,47 @@ pub async fn create_physical_file(app_handle: tauri::AppHandle, filename: String
     use std::fs::File as StdFile;
     use std::io::Write;
     use std::path::PathBuf;
+
+    let config = load_app_config(&app_handle);
+    
+    let base_dir = if let Some(ref custom_dir) = config.work_files_dir {
+        if !custom_dir.trim().is_empty() {
+            PathBuf::from(custom_dir)
+        } else {
+            app_handle
+                .path()
+                .app_data_dir()
+                .map_err(|e| e.to_string())?
+        }
+    } else {
+        app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+    };
+    
+    let target_dir = base_dir.join(&folder);
+    std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+    
+    let file_path = target_dir.join(&filename);
+    
+    let mut file = StdFile::create(&file_path).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn create_physical_file_base64(app_handle: tauri::AppHandle, filename: String, base64_content: String, folder: String) -> Result<String, String> {
+    use tauri::Manager;
+    use std::fs::File as StdFile;
+    use std::io::Write;
+    use std::path::PathBuf;
+    use base64::prelude::*;
+
+    let bytes = BASE64_STANDARD
+        .decode(base64_content.trim())
+        .map_err(|e| format!("Invalid base64: {}", e))?;
 
     let config = load_app_config(&app_handle);
     
