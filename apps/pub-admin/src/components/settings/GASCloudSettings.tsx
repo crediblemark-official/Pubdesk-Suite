@@ -113,19 +113,19 @@ const GASCloudSettings: React.FC<GASCloudSettingsProps> = ({ showToast }) => {
         <div style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <h2 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
-              ☁️ Integrasi Google Apps Script (Cloud Sheets & Drive)
+              ☁️ Integrasi Sinkronisasi Cloud (Cloudflare Worker / Google Sheets)
             </h2>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: '1.4' }}>
-              Hubungkan PubDesk dengan Google Sheets (sebagai cloud database) dan Google Drive (sebagai cloud storage) melalui Web App Google Apps Script.
+              Hubungkan PubDesk dengan Google Sheets (cloud database) dan Google Drive via Cloudflare Worker atau Web App Google Apps Script langsung.
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div className="compact-form-group">
-                <label className="compact-label" style={{ color: 'var(--text-primary)', fontWeight: '600' }}>URL Web App Google Apps Script</label>
+                <label className="compact-label" style={{ color: 'var(--text-primary)', fontWeight: '600' }}>URL Sinkronisasi (Cloudflare Worker / GAS)</label>
                 <input
                   type="text"
                   className="compact-input"
-                  placeholder="https://script.google.com/macros/s/.../exec"
+                  placeholder="https://pubdesk-sync.namamu.workers.dev atau URL GAS"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                   style={{ width: '100%', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', outline: 'none' }}
@@ -133,11 +133,11 @@ const GASCloudSettings: React.FC<GASCloudSettingsProps> = ({ showToast }) => {
               </div>
 
               <div className="compact-form-group">
-                <label className="compact-label" style={{ color: 'var(--text-primary)', fontWeight: '600' }}>Token Keamanan (Pre-shared Key)</label>
+                <label className="compact-label" style={{ color: 'var(--text-primary)', fontWeight: '600' }}>Token Keamanan (Opsional jika menggunakan Worker)</label>
                 <input
                   type="password"
                   className="compact-input"
-                  placeholder="Masukkan token rahasia..."
+                  placeholder="Kosongkan jika menggunakan Cloudflare Worker..."
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
                   style={{ width: '100%', border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', outline: 'none' }}

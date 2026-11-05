@@ -36,10 +36,21 @@ pub fn set_sync_config(
 ) -> Result<(), String> {
     let db = state.db.lock().unwrap();
     let db = db.as_ref().ok_or("Database tidak diinisialisasi")?;
+
+    let mut normalized_gas_url = gas_url.trim().to_string();
+    if !normalized_gas_url.is_empty() && !normalized_gas_url.starts_with("http://") && !normalized_gas_url.starts_with("https://") {
+        normalized_gas_url = format!("https://{}", normalized_gas_url);
+    }
+    let normalized_token = gas_token.trim().to_string();
+    let normalized_worker = worker_url.trim().to_string();
+
+    let is_enabled = if !normalized_gas_url.is_empty() { "true" } else { "false" };
+    let _ = db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_enabled', ?1)", rusqlite::params![is_enabled]);
+
     db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_method', ?1)", rusqlite::params![sync_method]).map_err(|e| e.to_string())?;
-    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_worker_url', ?1)", rusqlite::params![worker_url]).map_err(|e| e.to_string())?;
-    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_url', ?1)", rusqlite::params![gas_url]).map_err(|e| e.to_string())?;
-    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_token', ?1)", rusqlite::params![gas_token]).map_err(|e| e.to_string())?;
+    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_worker_url', ?1)", rusqlite::params![normalized_worker]).map_err(|e| e.to_string())?;
+    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_url', ?1)", rusqlite::params![normalized_gas_url]).map_err(|e| e.to_string())?;
+    db.conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_gas_token', ?1)", rusqlite::params![normalized_token]).map_err(|e| e.to_string())?;
     let mut hide_val = None;
     if let Some(hide) = hide_sync_menu_in_other_apps {
         let val = if hide { "true" } else { "false" };
@@ -54,7 +65,7 @@ pub fn set_sync_config(
             "app_config",
             1,
             "UPSERT",
-            serde_json::json!({ "key": "gas_url", "value": gas_url, "updated_at": now }).to_string(),
+            serde_json::json!({ "key": "gas_url", "value": normalized_gas_url, "updated_at": now }).to_string(),
             now
         ]
     );
@@ -65,7 +76,7 @@ pub fn set_sync_config(
             "app_config",
             2,
             "UPSERT",
-            serde_json::json!({ "key": "gas_token", "value": gas_token, "updated_at": now }).to_string(),
+            serde_json::json!({ "key": "gas_token", "value": normalized_token, "updated_at": now }).to_string(),
             now
         ]
     );
@@ -95,20 +106,31 @@ pub async fn test_sync_connection(state: State<'_, AppState>) -> Result<String, 
         cfg = client::SyncRuntimeConfig::load(&db.conn);
     }
 
-    let (gas_ok, gas_error) = if let Some(ref url) = cfg.gas_url {
-        let token = cfg.gas_token.as_deref().unwrap_or("PubDesk_Secret_Token_2026");
-        match reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build() {
-            Ok(client) => {
-                let body = serde_json::json!({ "action": "test", "auth_token": token });
-                match client.post(url).json(&body).send().await {
-                    Ok(resp) => (resp.status().is_success(), if resp.status().is_success() { String::new() } else { format!("HTTP {}", resp.status()) }),
-                    Err(e) => (false, e.to_string()),
+    let (gas_ok, gas_error) = if let Some(ref raw_url) = cfg.gas_url {
+        let url = raw_url.trim();
+        if url.is_empty() {
+            (false, "URL sinkronisasi belum diisi atau belum disimpan".to_string())
+        } else {
+            let normalized_url = if !url.starts_with("http://") && !url.starts_with("https://") {
+                format!("https://{}", url)
+            } else {
+                url.to_string()
+            };
+            let token_raw = cfg.gas_token.as_deref().unwrap_or("");
+            let token = if token_raw.trim().is_empty() { "PubDesk_Secret_Token_2026" } else { token_raw.trim() };
+            match reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build() {
+                Ok(client) => {
+                    let body = serde_json::json!({ "action": "test", "auth_token": token });
+                    match client.post(&normalized_url).json(&body).send().await {
+                        Ok(resp) => (resp.status().is_success(), if resp.status().is_success() { String::new() } else { format!("HTTP {}", resp.status()) }),
+                        Err(e) => (false, format!("Koneksi gagal: {}", e)),
+                    }
                 }
+                Err(e) => (false, format!("Client error: {}", e)),
             }
-            Err(e) => (false, format!("Client error: {}", e)),
         }
     } else {
-        (false, "URL GAS belum dikonfigurasi".to_string())
+        (false, "URL sinkronisasi belum dikonfigurasi".to_string())
     };
 
     serde_json::to_string(&serde_json::json!({

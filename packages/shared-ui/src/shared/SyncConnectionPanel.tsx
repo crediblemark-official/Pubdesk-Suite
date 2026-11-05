@@ -48,24 +48,60 @@ export const SyncConnectionPanel: React.FC<SyncConnectionPanelProps> = ({ isAdmi
     setTesting(true);
     try {
       const res = await invoke<string>('test_sync_connection');
-      showMsg(res);
+      try {
+        const parsed = JSON.parse(res);
+        if (parsed.gas_ok) {
+          showMsg('✅ Koneksi Berhasil! Terhubung ke Cloudflare Worker & Google Apps Script.');
+        } else {
+          showMsg('❌ Gagal: ' + (parsed.gas_error || 'Koneksi ditolak'));
+        }
+      } catch {
+        showMsg(res);
+      }
       load();
     } catch (e: any) {
       showMsg('Gagal: ' + (e.message || String(e)));
     } finally { setTesting(false); }
   };
 
+  const toggleStatus = async () => {
+    const next = !enabled;
+    try {
+      await invoke('set_sync_enabled', { enabled: next });
+      setEnabled(next);
+      showMsg(next ? '✅ Sinkronisasi diaktifkan.' : '○ Sinkronisasi dinonaktifkan.');
+      load();
+    } catch (e: any) {
+      showMsg('Gagal mengubah status: ' + (e.message || String(e)));
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', boxSizing: 'border-box' }}>
       {/* Header Status */}
-      <div style={{ padding: '16px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderLeft: '4px solid #10b981' }}>
+      <div style={{ padding: '16px', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderLeft: enabled ? '4px solid #10b981' : '4px solid #6b7280' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</span>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: enabled ? '#10b981' : 'var(--text-secondary)' }}>
               {enabled ? '● Aktif' : '○ Nonaktif'}
             </div>
           </div>
+          <button
+            onClick={toggleStatus}
+            style={{
+              padding: '6px 14px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              borderRadius: '0px',
+              background: enabled ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+              border: enabled ? '1px solid #ef4444' : '1px solid #10b981',
+              color: enabled ? '#ef4444' : '#10b981',
+            }}
+          >
+            {enabled ? 'Nonaktifkan' : 'Aktifkan'}
+          </button>
         </div>
       </div>
 
@@ -179,13 +215,25 @@ const SyncConfigForm: React.FC<{ isAdmin?: boolean; onSaved: () => void }> = ({ 
   const save = async () => {
     setSaving(true);
     try {
+      let trimmedUrl = gasUrl.trim();
+      if (trimmedUrl.length > 0 && !trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+        trimmedUrl = 'https://' + trimmedUrl;
+        setGasUrl(trimmedUrl);
+      }
+      const trimmedToken = gasToken.trim();
+
       await invoke('set_sync_config', {
         syncMethod: 'gas',
         workerUrl: '',
-        gasUrl,
-        gasToken,
+        gasUrl: trimmedUrl,
+        gasToken: trimmedToken,
         hideSyncMenuInOtherApps: hideInOtherApps
       });
+
+      if (trimmedUrl.length > 0) {
+        await invoke('set_sync_enabled', { enabled: true }).catch(() => {});
+      }
+
       setIsLocked(true);
       localStorage.setItem('pubdesk_sync_config_locked', 'true');
       onSaved();
@@ -226,13 +274,13 @@ const SyncConfigForm: React.FC<{ isAdmin?: boolean; onSaved: () => void }> = ({ 
       )}
 
       <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-        URL Google Apps Script
+        URL Sinkronisasi (Cloudflare Worker / Google Apps Script)
         <input
           type="text"
           disabled={isLocked}
           value={gasUrl}
           onChange={(e) => setGasUrl(e.target.value)}
-          placeholder="https://script.google.com/macros/s/.../exec"
+          placeholder="https://pubdesk-sync.namamu.workers.dev atau URL GAS"
           style={{
             ...inputStyle,
             marginTop: '4px',
@@ -244,13 +292,13 @@ const SyncConfigForm: React.FC<{ isAdmin?: boolean; onSaved: () => void }> = ({ 
       </label>
 
       <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-        Token GAS
+        Token Rahasia (Opsional jika menggunakan Cloudflare Worker)
         <input
           type="text"
           disabled={isLocked}
           value={gasToken}
           onChange={(e) => setGasToken(e.target.value)}
-          placeholder="Token rahasia Anda"
+          placeholder="Kosongkan jika menggunakan Cloudflare Worker"
           style={{
             ...inputStyle,
             marginTop: '4px',
@@ -324,7 +372,14 @@ const SyncConfigForm: React.FC<{ isAdmin?: boolean; onSaved: () => void }> = ({ 
       {/* Panduan Setup */}
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginTop: '14px' }}>
         <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
-          <span>📖</span> Panduan Singkat Hubungkan Google Apps Script
+          <span>⚡</span> Rekomendasi: Gunakan Cloudflare Worker (Lebih Praktis)
+        </h4>
+        <div style={{ padding: '10px 12px', background: 'rgba(2, 132, 199, 0.08)', border: '1px solid rgba(2, 132, 199, 0.25)', fontSize: '12px', lineHeight: '1.5', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+          Cukup deploy worker dari folder <code>cloudflare-worker/</code>. Anda cukup memasukkan URL Worker (misal <code>https://pubdesk-sync.namamu.workers.dev</code>) tanpa perlu memasukkan token rahasia di PC lain.
+        </div>
+
+        <h4 style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
+          <span>📖</span> Panduan Direct Google Apps Script
         </h4>
         <div style={{ padding: '12px 14px', background: 'var(--bg-card)', border: '1px solid var(--border)', fontSize: '12px', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
           <ol style={{ paddingLeft: '18px', margin: 0 }}>

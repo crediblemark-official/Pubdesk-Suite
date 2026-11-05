@@ -1,0 +1,8 @@
+name = "pubdesk-sync-gateway"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Environment Variables
+[vars]
+GAS_URL = "https://script.google.com/macros/s/AKfycbznI3Q4IqjG1T3BvduLlymBJUaMaNdDNjj4OF9krkfjUsXIvAamD8emMcZedwd5El0e2g/exec"
+AUTH_TOKEN = "PubDesk_Secret_Token_2026"

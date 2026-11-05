@@ -40,7 +40,7 @@ impl SyncRuntimeConfig {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.enabled && self.workspace_id.is_some() && self.device_id.is_some()
+        self.enabled && self.gas_url.as_ref().map(|u| !u.trim().is_empty()).unwrap_or(false)
     }
 }
 
@@ -89,7 +89,8 @@ pub async fn sync_push_to_gas(changes: Vec<SyncChange>, config: &SyncRuntimeConf
     if changes.is_empty() { return Ok(0); }
     let count = changes.len();
     let gas_url = config.gas_url.as_deref().unwrap_or("");
-    let token = config.gas_token.as_deref().unwrap_or("PubDesk_Secret_Token_2026");
+    let token_raw = config.gas_token.as_deref().unwrap_or("");
+    let token = if token_raw.trim().is_empty() { "PubDesk_Secret_Token_2026" } else { token_raw.trim() };
 
     let body = serde_json::json!({
         "action": "push_changes", "auth_token": token,
@@ -121,7 +122,8 @@ pub fn sync_mark_sent(conn: &Connection, ids: &[i64]) -> Result<(), String> {
 /// Step 6: Pull dari GAS (HTTP only, no DB lock)
 pub async fn sync_pull_from_gas(config: &SyncRuntimeConfig) -> Result<Vec<SyncChange>, String> {
     let gas_url = config.gas_url.as_deref().unwrap_or("");
-    let token = config.gas_token.as_deref().unwrap_or("PubDesk_Secret_Token_2026");
+    let token_raw = config.gas_token.as_deref().unwrap_or("");
+    let token = if token_raw.trim().is_empty() { "PubDesk_Secret_Token_2026" } else { token_raw.trim() };
 
     let body = serde_json::json!({
         "action": "pull_changes", "auth_token": token,
