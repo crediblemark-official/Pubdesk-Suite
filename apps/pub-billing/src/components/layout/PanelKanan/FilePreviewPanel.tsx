@@ -7,6 +7,7 @@ import { useDataMasterContext } from '../../../contexts/DataMasterContext';
 import InvoicePreview from '../../invoice/InvoicePreview';
 import { parseModifiedBy, formatBytes, getMimeLabel } from '../../../utils/gdrive';
 import { formatPrice } from '../../../utils/format';
+import { buildOverrideInvoice, formatPdfFilename } from '../../../utils/invoice';
 
 interface FilePreviewPanelProps {
   /** ID berkas yang dipilih */
@@ -25,10 +26,13 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
     gdriveAccounts,
     refreshAccountToken,
     setActiveModule,
+    contacts,
   } = useAppContext();
 
   const {
     files,
+    addFile,
+    deleteFile,
     updateFile,
     addFileTag,
     removeFileTag,
@@ -36,7 +40,7 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
     previewInvoiceId,
   } = useFileState();
 
-  const { loadInvoiceToForm } = useInvoiceContext();
+  const { loadInvoiceToForm, profiles, activeProfile } = useInvoiceContext();
   const { tim } = useDataMasterContext();
 
   const [fileMetadata, setFileMetadata] = useState<any | null>(null);
@@ -279,12 +283,84 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
 
   const handleDownloadPdf = async () => {
     try {
-      const { generateInvoicePDFBytes, downloadPDFBytes } = await import('../../../utils/pdfGenerator');
+      const { generateInvoicePDFBytes, downloadPDFBytes, createPhysicalFileSafely } = await import('../../../utils/pdfGenerator');
       const bytes = await generateInvoicePDFBytes('file-preview-panel-export');
-      const defaultFileName = currentFileSelected?.filename || 'Invoice.pdf';
+
+      // Cari invoice yang sedang dipratinjau
+      const activeFile = files.find(f => f.id === selectedFileId);
+      const invoiceId = activeFile?.type === 'invoice' && activeFile.version_label
+        ? parseInt(activeFile.version_label)
+        : previewInvoiceId;
+      const currentInvoice = invoiceId ? invoices.find(i => i.id === invoiceId) : null;
+
+      let defaultFileName = activeFile?.filename || 'Invoice.pdf';
+      if (currentInvoice) {
+        const ov = buildOverrideInvoice(currentInvoice, contacts);
+        const profile = profiles.find(p => p.id === ov.profileId) || activeProfile;
+        defaultFileName = formatPdfFilename(ov.pdfFilenameFormat || profile?.pdfFilenameFormat, {
+          profileName: profile?.name,
+          invoiceNo: ov.invoiceNo,
+          invoiceHal: ov.invoiceHal,
+          invoiceLampiran: ov.invoiceLampiran,
+          invoiceDate: ov.invoiceDate,
+          customerName: ov.customerName,
+          customerWa: ov.waNumber,
+          customerEmail: ov.email,
+          customerAddress: ov.address,
+          paymentStatus: ov.paymentStatus,
+          companyName: profile?.companyName,
+          actionLabel: profile?.actionLabel,
+          items: ov.items,
+          totalAmount: currentInvoice.total || 0,
+          paidAmount: ov.paidAmount,
+          remainingAmount: ov.remainingAmount
+        });
+      }
+
       const saved = await downloadPDFBytes(bytes, defaultFileName);
       if (saved) {
         showToast('PDF berhasil diunduh', 'success');
+
+        // Sinkronkan berkas fisik lokal di folder smart storage agar file di disk ter-update
+        if (currentInvoice && currentInvoice.id) {
+          try {
+            const physicalPath = await createPhysicalFileSafely(defaultFileName, bytes, 'invoices');
+            const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+            const matchingFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(currentInvoice.id));
+            if (matchingFiles.length > 0) {
+              const primary = matchingFiles[0];
+              for (const f of matchingFiles) {
+                if (f.path && f.path !== physicalPath) {
+                  try { await tauriInvoke('remove_file_physically', { path: f.path }); } catch (_) {}
+                }
+              }
+              await updateFile({
+                ...primary,
+                filename: defaultFileName,
+                path: physicalPath,
+                size: bytes.byteLength,
+                status: 'final'
+              });
+              for (let i = 1; i < matchingFiles.length; i++) {
+                if (matchingFiles[i].id) {
+                  try { await deleteFile(matchingFiles[i].id!); } catch (_) {}
+                }
+              }
+            } else {
+              await addFile({
+                name: defaultFileName.replace(/\.pdf$/i, ''),
+                filename: defaultFileName,
+                path: physicalPath,
+                type: 'invoice',
+                version_label: String(currentInvoice.id),
+                size: bytes.byteLength,
+                status: 'final'
+              });
+            }
+          } catch (syncErr) {
+            console.warn('Gagal sinkronisasi fisik lokal setelah download:', syncErr);
+          }
+        }
       }
     } catch (err) {
       console.error(err);
@@ -643,76 +719,15 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
     );
   };
 
-  // ---------- Invoice tanpa file entry — tampilkan preview langsung ----------
-  if (!selectedFileId && previewInvoiceId) {
-    const invoice = invoices.find(inv => inv.id === previewInvoiceId);
-    if (invoice) {
-      let meta: any = {};
-      try { if (invoice.file_path) meta = JSON.parse(invoice.file_path); } catch { }
-      let items: any[] = [];
-      try { items = JSON.parse(invoice.items_json); } catch { }
-      const overrideInvoice = {
-        customerName: meta.customerName || '',
-        waNumber: meta.customerWa || '',
-        address: meta.customerAddress || '',
-        items, shippingCost: invoice.shipping_cost,
-        adminFee: invoice.admin_fee, invoiceType: invoice.export_format || '',
-        profileId: meta.profileId || '',
-        pdfFilenameFormat: meta.pdfFilenameFormat || '',
-        invoiceNo: meta.invoiceNo || '', invoiceHal: meta.invoiceHal || '',
-        invoiceLampiran: meta.invoiceLampiran || '',
-        invoiceDate: meta.invoiceDate || '',
-        paymentStatus: meta.paymentStatus || 'LUNAS',
-        spesifikasiFasilitas: meta.spesifikasiFasilitas || '',
-        paidAmount: invoice.paid_amount ?? meta.paidAmount ?? 0,
-        paymentNotes: invoice.payment_notes ?? meta.paymentNotes ?? ''
-      };
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)' }}>
-          <div style={{ padding: '10px 16px', background: '#fef3cd', borderBottom: '1px solid #fbbf24', fontSize: '12px', fontWeight: '600', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            ⚠️ Invoice ini belum memiliki file PDF terindex.
-          </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
-            <InvoicePreview overrideInvoice={overrideInvoice} />
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', textAlign: 'center', fontWeight: '500' }}>
-          Data invoice tidak ditemukan
-        </p>
-      </div>
-    );
-  }
+  // ---------- Penanganan Invoice (baik dari berkas fisik terindex maupun previewInvoiceId) ----------
+  const activeFile = selectedFileId ? files.find(f => f.id === selectedFileId) : null;
+  const isInvoicePreview = (activeFile?.type === 'invoice') || (!selectedFileId && previewInvoiceId);
 
-  // ---------- Tidak ada berkas terpilih ----------
-  if (!selectedFileId) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', textAlign: 'center', fontWeight: '500' }}>
-          Pilih berkas untuk melihat pratinjau
-        </p>
-      </div>
-    );
-  }
-
-  const file = files.find(f => f.id === selectedFileId);
-  if (!file) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', textAlign: 'center', fontWeight: '500' }}>
-          Pilih berkas invoice untuk melihat pratinjau
-        </p>
-      </div>
-    );
-  }
-
-  // ---------- Berkas Invoice — render InvoicePreview ----------
-  if (file.type === 'invoice') {
-    const invoiceId = file.version_label ? parseInt(file.version_label) : null;
-    const invoice = invoices.find(inv => inv.id === invoiceId);
+  if (isInvoicePreview) {
+    const invoiceId = activeFile?.type === 'invoice' && activeFile.version_label
+      ? parseInt(activeFile.version_label)
+      : previewInvoiceId;
+    const invoice = invoiceId ? invoices.find(inv => inv.id === invoiceId) : null;
 
     if (!invoice) {
       return (
@@ -722,34 +737,36 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
       );
     }
 
-    let metadata: any = { invoiceNo: '', invoiceDate: '', invoiceHal: '', invoiceLampiran: '', paymentStatus: 'LUNAS', spesifikasiFasilitas: '', customerName: '', customerWa: '', customerAddress: '' };
-    try { if (invoice.file_path) metadata = JSON.parse(invoice.file_path); } catch { }
-
-    let items: any[] = [];
-    try { items = JSON.parse(invoice.items_json); } catch { }
-
-    const overrideInvoice = {
-      customerName: metadata.customerName || '',
-      waNumber: metadata.customerWa || '',
-      address: metadata.customerAddress || '',
-      items,
-      shippingCost: invoice.shipping_cost,
-      adminFee: invoice.admin_fee,
-      invoiceType: invoice.export_format || '',
-      profileId: metadata.profileId || '',
-      pdfFilenameFormat: metadata.pdfFilenameFormat || '',
-      invoiceNo: metadata.invoiceNo || '',
-      invoiceHal: metadata.invoiceHal || '',
-      invoiceLampiran: metadata.invoiceLampiran || '',
-      invoiceDate: metadata.invoiceDate || '',
-      paymentStatus: metadata.paymentStatus || 'LUNAS',
-      spesifikasiFasilitas: metadata.spesifikasiFasilitas || '',
-      paidAmount: invoice.paid_amount ?? metadata.paidAmount ?? 0,
-      paymentNotes: invoice.payment_notes ?? metadata.paymentNotes ?? ''
-    };
+    const overrideInvoice = buildOverrideInvoice(invoice, contacts);
+    const profile = profiles.find(p => p.id === overrideInvoice.profileId) || activeProfile;
+    const computedFileName = activeFile?.filename || formatPdfFilename(overrideInvoice.pdfFilenameFormat || profile?.pdfFilenameFormat, {
+      profileName: profile?.name,
+      invoiceNo: overrideInvoice.invoiceNo,
+      invoiceHal: overrideInvoice.invoiceHal,
+      invoiceLampiran: overrideInvoice.invoiceLampiran,
+      invoiceDate: overrideInvoice.invoiceDate,
+      customerName: overrideInvoice.customerName,
+      customerWa: overrideInvoice.waNumber,
+      customerEmail: overrideInvoice.email,
+      customerAddress: overrideInvoice.address,
+      paymentStatus: overrideInvoice.paymentStatus,
+      companyName: profile?.companyName,
+      actionLabel: profile?.actionLabel,
+      items: overrideInvoice.items,
+      totalAmount: invoice.total || 0,
+      paidAmount: overrideInvoice.paidAmount,
+      remainingAmount: overrideInvoice.remainingAmount
+    });
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)' }}>
+        {/* Banner peringatan jika berkas fisik belum terindex */}
+        {!activeFile && (
+          <div style={{ padding: '8px 14px', background: '#fef3cd', borderBottom: '1px solid #fbbf24', fontSize: '11px', fontWeight: '600', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            ℹ️ Berkas PDF fisik belum terindex di komputer ini. Klik "Download PDF" di bawah untuk menyimpan salinannya.
+          </div>
+        )}
+
         {/* Header: Tab Switcher + Zoom + Edit */}
         <div style={{ padding: '6px 12px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', zIndex: 10, flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: '4px', background: 'var(--bg-card)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border)' }}>
@@ -806,19 +823,24 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
             <>
               <div style={{ marginBottom: '16px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
                 <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px 0', wordBreak: 'break-all' }}>
-                  {file.filename}
+                  {computedFileName}
                 </h4>
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
                   <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', background: 'rgba(192, 28, 28, 0.1)', color: 'var(--accent)', textTransform: 'uppercase' }}>
-                    {file.type}
+                    invoice
                   </span>
                   <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', background: 'rgba(0, 0, 0, 0.05)', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                    Lokal
+                    {activeFile ? 'Lokal' : 'Belum Tersimpan Fisik'}
                   </span>
                 </div>
               </div>
 
-              {renderInspectorContent(file)}
+              {activeFile ? renderInspectorContent(activeFile) : (
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                  <p>Invoice ini telah tercatat di sistem dengan nomor <strong>{overrideInvoice.invoiceNo}</strong> dan status <strong>{overrideInvoice.paymentStatus}</strong>.</p>
+                  <p>Klik tombol <strong>Download PDF</strong> di bawah untuk mengekspor berkas resminya ke komputer Anda.</p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -840,6 +862,19 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
       </div>
     );
   }
+
+  // ---------- Tidak ada berkas terpilih ----------
+  if (!selectedFileId || !activeFile) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg-panel)', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '14px', textAlign: 'center', fontWeight: '500' }}>
+          Pilih berkas untuk melihat pratinjau
+        </p>
+      </div>
+    );
+  }
+
+  const file = activeFile;
 
   // ---------- Berkas GDrive ----------
   if (file.type === 'gdrive') {

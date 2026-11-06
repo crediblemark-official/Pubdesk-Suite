@@ -11,7 +11,7 @@ import { GlobalCostsSection } from './generator-sections/GlobalCostsSection';
 import InvoicePreview from './InvoicePreview';
 
 const InvoiceGenerator: React.FC = () => {
-  const { addInvoice, updateInvoice, addFile, showToast, rightPanelVisible, invoices, files, contacts, addContact, updateContact, setActiveModule } = useAppContext();
+  const { addInvoice, updateInvoice, addFile, updateFile, deleteFile, showToast, rightPanelVisible, invoices, files, contacts, addContact, updateContact, setActiveModule } = useAppContext();
   const { loadPenulis, addPenulis } = useDataMasterContext();
   const {
     customer,
@@ -200,19 +200,102 @@ const InvoiceGenerator: React.FC = () => {
     };
   };
 
-  // Simpan saja (Catat) — tanpa PDF, tanpa GAS
+  // Helper sinkronisasi berkas fisik PDF dan entri file di database
+  const syncPhysicalInvoicePdf = async (invoiceId: number, currentPaymentStatus: string) => {
+    try {
+      const { generateInvoicePDFBytes, createPhysicalFileSafely } = await import('../../utils/pdfGenerator');
+      const bytes = await generateInvoicePDFBytes('invoice-preview-export');
+      const totalAmount = calculateTotal();
+      const currentPaidAmount = currentPaymentStatus === 'LUNAS' ? totalAmount : paidAmount;
+      const currentRemainingAmount = currentPaymentStatus === 'LUNAS' ? 0 : Math.max(0, totalAmount - paidAmount);
+
+      const filename = formatPdfFilename(activeProfile?.pdfFilenameFormat, {
+        profileName: activeProfile?.name,
+        invoiceNo,
+        invoiceHal,
+        invoiceLampiran,
+        invoiceDate,
+        customerName: customer.name,
+        customerWa: customer.wa_number,
+        customerEmail: customer.email,
+        customerAddress: customer.address,
+        paymentStatus: currentPaymentStatus,
+        companyName: activeProfile?.companyName,
+        actionLabel: activeProfile?.actionLabel,
+        items,
+        totalAmount,
+        paidAmount: currentPaidAmount,
+        remainingAmount: currentRemainingAmount
+      });
+
+      const physicalPath = await createPhysicalFileSafely(filename, bytes, 'invoices');
+      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+
+      // Ambil seluruh file entry lama untuk invoice ini
+      const oldFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+      if (oldFiles.length > 0) {
+        const primaryFile = oldFiles[0];
+        // Hapus file fisik lama jika path berubah (misal nama berkas berubah dari DP ke LUNAS)
+        for (const f of oldFiles) {
+          if (f.path && f.path !== physicalPath) {
+            try {
+              await tauriInvoke('remove_file_physically', { path: f.path });
+            } catch (_) {}
+          }
+        }
+        // Perbarui entri file di database
+        await updateFile({
+          ...primaryFile,
+          filename,
+          path: physicalPath,
+          status: 'final',
+          last_modified: new Date().toISOString()
+        });
+        // Hapus entri duplikat lama jika ada
+        for (const extra of oldFiles.slice(1)) {
+          if (extra.id) {
+            await deleteFile(extra.id);
+          }
+        }
+      } else {
+        await addFile({
+          filename,
+          path: physicalPath,
+          type: 'invoice',
+          project_id: undefined,
+          version_label: String(invoiceId),
+          status: 'final',
+          last_modified: new Date().toISOString(),
+          is_readonly: false
+        });
+      }
+
+      return { filename, bytes, physicalPath };
+    } catch (err) {
+      console.error('Gagal sinkronisasi berkas fisik invoice:', err);
+      return null;
+    }
+  };
+
+  // Simpan saja (Catat)
   const handleCatatOnly = async () => {
     if (!validateInvoice()) return;
     setLoadingCatatOnly(true);
     try {
       const invoiceData = await prepareInvoiceData();
+      let invoiceId = editingInvoiceId;
       if (editingInvoiceId) {
         await updateInvoice(invoiceData as any);
-        showToast('Invoice berhasil diperbarui!', 'success');
       } else {
-        await addInvoice(invoiceData as any);
-        showToast('Invoice berhasil dicatat!', 'success');
+        invoiceId = await addInvoice(invoiceData as any);
       }
+
+      // Selalu perbarui berkas fisik PDF agar data & status selalu sinkron
+      if (invoiceId) {
+        await syncPhysicalInvoicePdf(invoiceId, paymentStatus);
+      }
+
+      showToast(editingInvoiceId ? 'Invoice & berkas PDF berhasil diperbarui!' : 'Invoice berhasil dicatat & PDF dibuat!', 'success');
       resetInvoice();
     } catch (error) {
       console.error(error);
@@ -235,53 +318,19 @@ const InvoiceGenerator: React.FC = () => {
         invoiceId = await addInvoice(invoiceData as any);
       }
 
-      // Generate & simpan PDF secara aman (Base64 + scale 2x)
-      const { generateInvoicePDFBytes, createPhysicalFileSafely } = await import('../../utils/pdfGenerator');
-      const bytes = await generateInvoicePDFBytes('invoice-preview-export');
-      const totalAmount = calculateTotal();
-      const filename = formatPdfFilename(activeProfile?.pdfFilenameFormat, {
-        profileName: activeProfile?.name,
-        invoiceNo,
-        invoiceHal,
-        invoiceLampiran,
-        invoiceDate,
-        customerName: customer.name,
-        customerWa: customer.wa_number,
-        customerEmail: customer.email,
-        customerAddress: customer.address,
-        paymentStatus,
-        companyName: activeProfile?.companyName,
-        actionLabel: activeProfile?.actionLabel,
-        items,
-        totalAmount,
-        paidAmount: paidAmount,
-        remainingAmount: Math.max(0, totalAmount - paidAmount)
-      });
-
-      // Simpan ke disk & register file entry via Base64 IPC yang aman (menghindari OOM JSON IPC)
-      const physicalPath = await createPhysicalFileSafely(filename, bytes, 'invoices');
-      const existingFile = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId) && f.filename === filename);
-      if (!existingFile) {
-        await addFile({
-          filename,
-          path: physicalPath,
-          type: 'invoice',
-          project_id: undefined,
-          version_label: String(invoiceId),
-          status: 'final',
-          last_modified: new Date().toISOString(),
-          is_readonly: false
-        });
+      let syncResult: any = null;
+      if (invoiceId) {
+        syncResult = await syncPhysicalInvoicePdf(invoiceId, paymentStatus);
       }
 
       // Download browser fallback hanya jika dijalankan di mode web browser (bukan Tauri desktop)
       const isTauri = typeof window !== 'undefined' && (!!(window as any).__TAURI_INTERNALS__ || !!(window as any).__TAURI__);
-      if (!isTauri) {
-        const blob = new Blob([bytes as any], { type: 'application/pdf' });
+      if (!isTauri && syncResult) {
+        const blob = new Blob([syncResult.bytes as any], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = filename;
+        a.download = syncResult.filename;
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {

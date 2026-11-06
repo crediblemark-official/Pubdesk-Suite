@@ -4,7 +4,8 @@ import { useFileState } from '../../contexts/FileContext';
 import { useInvoiceContext } from '../../contexts/InvoiceContext';
 import { Invoice } from '../../types/invoice.types';
 import { formatPrice } from '../../utils/format';
-import { getInvoiceMetadata, formatDateId } from '../../utils/invoice';
+import { getInvoiceMetadata, formatDateId, buildOverrideInvoice, formatPdfFilename } from '../../utils/invoice';
+import InvoicePreview from './InvoicePreview';
 import { StatusBadge } from '../../ui/atoms/Badge';
 import { FilterBar, FilterGroup, FilterChip, FilterDivider } from '../../ui/molecules/FilterBar';
 import { TableEmptyState } from '../../ui/molecules/EmptyState';
@@ -34,10 +35,12 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
     setActiveModule, 
     registerImportExportActions,
     addInvoice,
+    contacts,
   } = useAppContext();
 
   const {
     files,
+    addFile,
     deleteFile,
     updateFile,
     selectedFileId,
@@ -47,7 +50,9 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
     setPreviewInvoiceId,
   } = useFileState();
   
-  const { loadInvoiceToForm } = useInvoiceContext();
+  const { loadInvoiceToForm, profiles, activeProfile } = useInvoiceContext();
+
+  const [exportingInvoice, setExportingInvoice] = useState<any | null>(null);
 
   const [sortField, setSortField] = useState<'date' | 'invoiceNo' | 'customerName' | 'total' | 'status' | 'fileStatus'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -111,14 +116,20 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
       onConfirm: async () => {
         try {
           let successCount = 0;
+          const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
           for (const invoiceId of markedInvoiceIds) {
             // Hapus entri invoice dari SQLite
             await deleteInvoice(invoiceId);
 
-            // Cari & Hapus entri file terkait di SQLite
-            const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
-            if (fileEntry && fileEntry.id) {
-              await deleteFile(fileEntry.id);
+            // Cari & Hapus semua entri file terkait di SQLite dan fisik
+            const relatedFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+            for (const f of relatedFiles) {
+              if (f.path) {
+                try { await tauriInvoke('remove_file_physically', { path: f.path }); } catch (_) {}
+              }
+              if (f.id) {
+                await deleteFile(f.id);
+              }
             }
             successCount++;
           }
@@ -200,8 +211,8 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
           valB = metaB.paymentStatus || 'BERMASALAH';
           break;
         case 'fileStatus': {
-          const fileA = files.find(f => f.type === 'invoice' && f.version_label === String(a.id));
-          const fileB = files.find(f => f.type === 'invoice' && f.version_label === String(b.id));
+          const fileA = getLatestInvoiceFile(a.id!);
+          const fileB = getLatestInvoiceFile(b.id!);
           valA = fileA?.status || 'draft';
           valB = fileB?.status || 'draft';
           break;
@@ -217,22 +228,127 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
     });
   }, [invoices, searchQuery, sortField, sortDirection, selectedStatus, files]);
 
+  // Helper untuk mendapatkan entri file invoice terbaru (tertinggi ID-nya)
+  const getLatestInvoiceFile = (invoiceId: number) => {
+    const matchingFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+    if (matchingFiles.length === 0) return null;
+    return [...matchingFiles].sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+  };
+
+  // Helper untuk memeriksa apakah file fisik di disk ada dan statusnya sesuai
+  const isInvoiceFileValidAndCurrent = async (invoice: Invoice, fileEntry: any | null) => {
+    if (!fileEntry || !fileEntry.path) return false;
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    try {
+      const exists = await tauriInvoke<boolean>('check_file_exists', { path: fileEntry.path });
+      if (!exists) return false;
+    } catch {
+      return false;
+    }
+
+    const currentStatus = invoice.payment_status || getInvoiceMetadata(invoice).paymentStatus || 'BELUM LUNAS';
+    const filenameUpper = (fileEntry.filename || '').toUpperCase();
+    
+    // Jika invoice sudah LUNAS tapi nama berkas masih mengandung DP atau BELUM LUNAS -> stale!
+    if (currentStatus === 'LUNAS' && (filenameUpper.includes(' - DP') || filenameUpper.includes(' - BELUM LUNAS'))) {
+      return false;
+    }
+    // Jika invoice DP tapi nama berkas bukan DP -> stale!
+    if (currentStatus === 'DP' && !filenameUpper.includes(' - DP')) {
+      return false;
+    }
+    // Jika invoice BELUM LUNAS tapi nama berkas bukan BELUM LUNAS -> stale!
+    if (currentStatus === 'BELUM LUNAS' && !filenameUpper.includes(' - BELUM LUNAS')) {
+      return false;
+    }
+
+    return true;
+  };
+
+  // Helper untuk generate / perbarui berkas fisik PDF invoice secara on-demand
+  const ensurePhysicalInvoicePdf = async (invoice: Invoice): Promise<{ path: string; bytes: Uint8Array; filename: string }> => {
+    const overrideInvoice = buildOverrideInvoice(invoice, contacts);
+    setExportingInvoice(overrideInvoice);
+    
+    // Tunggu DOM ter-render
+    await new Promise(r => setTimeout(r, 300));
+
+    try {
+      const { generateInvoicePDFBytes, createPhysicalFileSafely } = await import('../../utils/pdfGenerator');
+      const bytes = await generateInvoicePDFBytes('invoice-manager-export-hidden');
+      
+      const profile = profiles.find(p => p.id === overrideInvoice.profileId) || activeProfile;
+      const filename = formatPdfFilename(overrideInvoice.pdfFilenameFormat || profile?.pdfFilenameFormat, {
+        profileName: profile?.name,
+        invoiceNo: overrideInvoice.invoiceNo,
+        invoiceHal: overrideInvoice.invoiceHal,
+        invoiceLampiran: overrideInvoice.invoiceLampiran,
+        invoiceDate: overrideInvoice.invoiceDate,
+        customerName: overrideInvoice.customerName,
+        customerWa: overrideInvoice.waNumber,
+        customerEmail: overrideInvoice.email,
+        customerAddress: overrideInvoice.address,
+        paymentStatus: overrideInvoice.paymentStatus,
+        companyName: profile?.companyName,
+        actionLabel: profile?.actionLabel,
+        items: overrideInvoice.items,
+        totalAmount: invoice.total || 0,
+        paidAmount: overrideInvoice.paidAmount,
+        remainingAmount: overrideInvoice.remainingAmount
+      });
+
+      const physicalPath = await createPhysicalFileSafely(filename, bytes, 'invoices');
+      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+
+      // Bersihkan berkas fisik lama dan rapikan database files
+      const matchingFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(invoice.id));
+      if (matchingFiles.length > 0) {
+        const primary = matchingFiles[0];
+        for (const f of matchingFiles) {
+          if (f.path && f.path !== physicalPath) {
+            try { await tauriInvoke('remove_file_physically', { path: f.path }); } catch (_) {}
+          }
+        }
+        await updateFile({
+          ...primary,
+          filename,
+          path: physicalPath,
+          size: bytes.byteLength,
+          status: 'final'
+        });
+        for (let i = 1; i < matchingFiles.length; i++) {
+          if (matchingFiles[i].id) {
+            try { await deleteFile(matchingFiles[i].id!); } catch (_) {}
+          }
+        }
+      } else {
+        await addFile({
+          name: filename.replace(/\.pdf$/i, ''),
+          filename,
+          path: physicalPath,
+          type: 'invoice',
+          version_label: String(invoice.id),
+          size: bytes.byteLength,
+          status: 'final'
+        });
+      }
+
+      return { path: physicalPath, bytes, filename };
+    } finally {
+      setExportingInvoice(null);
+    }
+  };
+
   // Aksi Buka File PDF Secara Native
   const handleOpenPDF = async (invoiceId: number) => {
     const inv = invoices.find(i => i.id === invoiceId);
-    const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+    if (!inv) return;
+
+    const fileEntry = getLatestInvoiceFile(invoiceId);
+    const isValid = await isInvoiceFileValidAndCurrent(inv, fileEntry);
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
 
-    let exists = false;
-    if (fileEntry?.path) {
-      try {
-        exists = await tauriInvoke<boolean>('check_file_exists', { path: fileEntry.path });
-      } catch {
-        exists = false;
-      }
-    }
-
-    if (fileEntry && exists) {
+    if (fileEntry && isValid) {
       try {
         await tauriInvoke('open_file_physically', { path: fileEntry.path });
         showToast('Membuka PDF invoice...', 'info');
@@ -241,47 +357,60 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
         showToast(`Gagal membuka berkas PDF: ${err?.message || err}`, 'error');
       }
     } else {
-      showToast('Berkas fisik PDF belum tersedia di komputer ini. Membuka generator untuk cetak/preview...', 'info');
-      if (inv) {
+      showToast('Menyiapkan dan membuka berkas PDF invoice terbaru...', 'info');
+      try {
+        const { path } = await ensurePhysicalInvoicePdf(inv);
+        await tauriInvoke('open_file_physically', { path });
+      } catch (err: any) {
+        console.error(err);
+        showToast('Gagal membuat berkas PDF. Membuka generator...', 'info');
         handleEdit(inv);
       }
     }
   };
 
   const handleOpenFileLocation = async (invoiceId: number) => {
-    const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
-    if (!fileEntry) {
-      showToast('Berkas PDF tidak ditemukan di database!', 'error');
-      return;
-    }
+    const inv = invoices.find(i => i.id === invoiceId);
+    if (!inv) return;
+
+    const fileEntry = getLatestInvoiceFile(invoiceId);
+    const isValid = await isInvoiceFileValidAndCurrent(inv, fileEntry);
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-    try {
-      await tauriInvoke('open_file_location_physically', { path: fileEntry.path });
-      showToast('Membuka lokasi berkas...', 'info');
-    } catch (err: any) {
-      console.error(err);
-      showToast(`Lokasi berkas tidak ditemukan: ${err?.message || err}`, 'error');
+
+    if (fileEntry && isValid) {
+      try {
+        await tauriInvoke('open_file_location_physically', { path: fileEntry.path });
+        showToast('Membuka lokasi berkas...', 'info');
+      } catch (err: any) {
+        console.error(err);
+        showToast(`Lokasi berkas tidak ditemukan: ${err?.message || err}`, 'error');
+      }
+    } else {
+      showToast('Menyiapkan berkas fisik invoice terlebih dahulu...', 'info');
+      try {
+        const { path } = await ensurePhysicalInvoicePdf(inv);
+        await tauriInvoke('open_file_location_physically', { path });
+      } catch (err: any) {
+        console.error(err);
+        showToast('Gagal menemukan atau membuat lokasi berkas!', 'error');
+      }
     }
   };
 
   // Download / Salin Berkas PDF ke lokasi pilihan pengguna secara aman
   const handleDownloadFile = async (invoiceId: number) => {
     const inv = invoices.find(i => i.id === invoiceId);
-    const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+    if (!inv) return;
+
+    const fileEntry = getLatestInvoiceFile(invoiceId);
+    const isValid = await isInvoiceFileValidAndCurrent(inv, fileEntry);
+
     const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+    const { save: dialogSave } = await import('@tauri-apps/plugin-dialog');
 
-    let exists = false;
-    if (fileEntry?.path) {
+    if (fileEntry && isValid) {
       try {
-        exists = await tauriInvoke<boolean>('check_file_exists', { path: fileEntry.path });
-      } catch {
-        exists = false;
-      }
-    }
-
-    if (fileEntry && exists) {
-      try {
-        const destPath = await save({
+        const destPath = await dialogSave({
           filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
           defaultPath: fileEntry.filename
         });
@@ -294,9 +423,18 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
         showToast(`Gagal mengunduh berkas: ${err?.message || err}`, 'error');
       }
     } else {
-      showToast('Berkas fisik PDF belum tersedia di komputer ini. Silakan generate ulang via editor...', 'info');
-      if (inv) {
-        handleEdit(inv);
+      // Berkas fisik belum ada atau stale (misal habis diedit dari DP -> LUNAS)
+      showToast('Menyiapkan dan menyinkronkan berkas PDF terbaru...', 'info');
+      try {
+        const { bytes, filename } = await ensurePhysicalInvoicePdf(inv);
+        const { downloadPDFBytes } = await import('../../utils/pdfGenerator');
+        const saved = await downloadPDFBytes(bytes, filename);
+        if (saved) {
+          showToast('Salinan berkas PDF berhasil diunduh / disimpan!', 'success');
+        }
+      } catch (err: any) {
+        console.error(err);
+        showToast(`Gagal memproses berkas PDF: ${err?.message || err}`, 'error');
       }
     }
   };
@@ -313,10 +451,16 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
           // Hapus entri invoice dari SQLite
           await deleteInvoice(invoiceId);
           
-          // Cari & Hapus entri file terkait di SQLite
-          const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
-          if (fileEntry && fileEntry.id) {
-            await deleteFile(fileEntry.id);
+          // Cari & Hapus semua entri file terkait di SQLite dan fisik
+          const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+          const relatedFiles = files.filter(f => f.type === 'invoice' && f.version_label === String(invoiceId));
+          for (const f of relatedFiles) {
+            if (f.path) {
+              try { await tauriInvoke('remove_file_physically', { path: f.path }); } catch (_) {}
+            }
+            if (f.id) {
+              await deleteFile(f.id);
+            }
           }
           
           showToast(`Invoice "${invoiceNo}" berhasil dihapus!`, 'success');
@@ -862,7 +1006,7 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
               filteredInvoices.map((inv) => {
                 const metadata = getInvoiceMetadata(inv);
                 const status = metadata.paymentStatus || 'BERMASALAH';
-                const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(inv.id));
+                const fileEntry = getLatestInvoiceFile(inv.id!);
                 const hasFile = !!fileEntry;
                 const isSelected = fileEntry
                   ? fileEntry.id === selectedFileId
@@ -1121,6 +1265,13 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
           </tbody>
         </table>
       </div>
+
+      {/* Hidden InvoicePreview for on-demand PDF generation */}
+      {exportingInvoice && (
+        <div style={{ position: 'fixed', top: 0, left: '-9999px', width: '595px', height: '842px', overflow: 'hidden', pointerEvents: 'none', zIndex: -100 }}>
+          <InvoicePreview id="invoice-manager-export-hidden" overrideInvoice={exportingInvoice} hideToolbar />
+        </div>
+      )}
     </div>
   );
 };

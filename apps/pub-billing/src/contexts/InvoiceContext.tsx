@@ -490,10 +490,12 @@ export const InvoiceProvider: React.FC<{ children: ReactNode }> = ({ children })
       setInvoiceHal(metadata.invoiceHal || '');
       setInvoiceLampiran(metadata.invoiceLampiran || '');
       setInvoiceDate(metadata.invoiceDate || '');
-      setPaymentStatus(metadata.paymentStatus || 'LUNAS');
+      const currentPayStatus = invoice.payment_status || metadata.paymentStatus || 'LUNAS';
+      setPaymentStatus(currentPayStatus);
       setSpesifikasiFasilitas(metadata.spesifikasiFasilitas || '');
       setSelectedLayoutId(metadata.selectedLayoutId || '');
-      setPaidAmount(invoice.paid_amount || metadata.paidAmount || 0);
+      const isLunas = currentPayStatus === 'LUNAS';
+      setPaidAmount(isLunas ? (invoice.total || metadata.paidAmount || 0) : (invoice.paid_amount ?? metadata.paidAmount ?? 0));
       setPaymentNotes(invoice.payment_notes || metadata.paymentNotes || '');
       
       // Cocokkan profile dengan export_format

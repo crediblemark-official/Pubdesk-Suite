@@ -65,7 +65,10 @@ export const getInvoiceMetadata = (invoice: any) => {
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         const parsed = JSON.parse(trimmed);
         if (parsed && typeof parsed === 'object') {
-          return parsed;
+          return {
+            ...parsed,
+            paymentStatus: invoice.payment_status || parsed.paymentStatus || 'BELUM LUNAS'
+          };
         }
       }
     }
@@ -214,4 +217,72 @@ export const formatPdfFilename = (
   }
 
   return result;
+};
+
+export const buildOverrideInvoice = (inv: any, contacts?: any[]) => {
+  let metadata: any = {};
+  try {
+    if (inv.file_path && typeof inv.file_path === 'string' && inv.file_path.trim().startsWith('{')) {
+      metadata = JSON.parse(inv.file_path);
+    }
+  } catch {}
+
+  let items: any[] = [];
+  try {
+    if (inv.items_json) {
+      items = JSON.parse(inv.items_json);
+    }
+  } catch {}
+
+  let customerName = metadata.customerName || '';
+  let customerWa = metadata.customerWa || '';
+  let customerEmail = metadata.customerEmail || '';
+  let customerAddress = metadata.customerAddress || '';
+
+  if (!customerName && inv.customer_snapshot) {
+    try {
+      const snap = typeof inv.customer_snapshot === 'string' ? JSON.parse(inv.customer_snapshot) : inv.customer_snapshot;
+      customerName = snap?.name || '';
+      customerWa = snap?.wa_number || '';
+      customerEmail = snap?.email || '';
+      customerAddress = snap?.address || '';
+    } catch {}
+  }
+
+  if (!customerName && inv.customer_id && contacts) {
+    const matched = contacts.find((c: any) => c.id === inv.customer_id);
+    if (matched) {
+      customerName = matched.name || '';
+      customerWa = matched.wa_number || '';
+      customerEmail = matched.email || '';
+      customerAddress = matched.address || '';
+    }
+  }
+
+  const currentStatus = inv.payment_status || metadata.paymentStatus || 'BELUM LUNAS';
+  const total = inv.total || 0;
+  const paidAmount = currentStatus === 'LUNAS' ? total : (inv.paid_amount ?? metadata.paidAmount ?? 0);
+  const remainingAmount = currentStatus === 'LUNAS' ? 0 : (inv.remaining_amount ?? metadata.remainingAmount ?? Math.max(0, total - paidAmount));
+
+  return {
+    customerName: customerName || 'Umum',
+    waNumber: customerWa || '',
+    email: customerEmail || '',
+    address: customerAddress || '',
+    items,
+    shippingCost: inv.shipping_cost || 0,
+    adminFee: inv.admin_fee || 0,
+    invoiceType: inv.export_format || '',
+    profileId: metadata.profileId || '',
+    pdfFilenameFormat: metadata.pdfFilenameFormat || '',
+    invoiceNo: metadata.invoiceNo || (inv.file_path?.match(/Invoice-([a-zA-Z0-9_-]+)\.pdf/i)?.[1]?.replace(/_/g, '/') || '-'),
+    invoiceHal: metadata.invoiceHal || 'Layanan Jasa',
+    invoiceLampiran: metadata.invoiceLampiran || '-',
+    invoiceDate: metadata.invoiceDate || (inv.created_at ? inv.created_at.substring(0, 10) : '-'),
+    paymentStatus: currentStatus,
+    spesifikasiFasilitas: metadata.spesifikasiFasilitas || '',
+    paidAmount,
+    remainingAmount,
+    paymentNotes: inv.payment_notes || metadata.paymentNotes || ''
+  };
 };

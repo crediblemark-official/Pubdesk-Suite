@@ -66,7 +66,10 @@ export const getInvoiceMetadata = (invoice: any) => {
       if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
         const parsed = JSON.parse(trimmed);
         if (parsed && typeof parsed === 'object') {
-          return parsed;
+          return {
+            ...parsed,
+            paymentStatus: invoice.payment_status || parsed.paymentStatus || 'BELUM LUNAS'
+          };
         }
       }
     }

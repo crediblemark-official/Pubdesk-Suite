@@ -1,13 +1,14 @@
 {
   "name": "pubhub-monorepo",
   "private": true,
-  "version": "0.1.30",
+  "version": "0.1.31",
   "type": "module",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
+    "bump": "bun scripts/bump-version.ts",
     "dev:billing": "bun --filter pub-billing dev",
     "dev:files": "bun --filter pub-files dev",
     "dev:ops": "bun --filter pub-ops dev",
