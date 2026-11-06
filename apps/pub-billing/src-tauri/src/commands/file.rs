@@ -198,75 +198,73 @@ pub async fn create_physical_file_base64(app_handle: tauri::AppHandle, filename:
 }
 
 #[tauri::command]
-pub async fn open_file_physically(path: String) -> Result<(), String> {
-    use std::process::Command;
-    
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("cmd")
-            .args(["/C", "start", "", &path])
-            .spawn()
-            .map_err(|e| e.to_string())?;
+pub async fn check_file_exists(path: String) -> Result<bool, String> {
+    use std::path::Path;
+    let path_buf = Path::new(&path);
+    if path_buf.exists() {
+        return Ok(true);
     }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+    if path.contains('\u{2215}') {
+        let alt_path = path.replace('\u{2215}', "-");
+        if Path::new(&alt_path).exists() {
+            return Ok(true);
+        }
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+    Ok(false)
+}
+
+#[tauri::command]
+pub async fn copy_file_physically(src: String, dest: String) -> Result<(), String> {
+    use std::path::Path;
+    let mut target_src = src.clone();
+    if !Path::new(&target_src).exists() && target_src.contains('\u{2215}') {
+        let alt = target_src.replace('\u{2215}', "-");
+        if Path::new(&alt).exists() {
+            target_src = alt;
+        }
     }
-    
+    if !Path::new(&target_src).exists() {
+        return Err(format!("Berkas sumber tidak ditemukan di sistem: {}", src));
+    }
+    std::fs::copy(&target_src, &dest).map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn open_file_location_physically(path: String) -> Result<(), String> {
-    use std::process::Command;
+pub async fn open_file_physically(path: String) -> Result<(), String> {
     use std::path::Path;
-    
-    let path_ref = Path::new(&path);
-    let parent = path_ref.parent().ok_or("No parent directory")?;
-    
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("explorer")
-            .arg(format!("/select,{}", path))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg("-R")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        // Coba buka dengan nautilus --select agar menyorot file terpilih (khusus Linux GNOME)
-        let nautilus_status = Command::new("nautilus")
-            .arg("--select")
-            .arg(&path)
-            .spawn();
-            
-        if nautilus_status.is_err() {
-            // Fallback membuka folder induk menggunakan xdg-open
-            Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .map_err(|e| e.to_string())?;
+    let mut target_path = path.clone();
+    if !Path::new(&target_path).exists() && target_path.contains('\u{2215}') {
+        let alt = target_path.replace('\u{2215}', "-");
+        if Path::new(&alt).exists() {
+            target_path = alt;
         }
     }
-    
-    Ok(())
+    if !Path::new(&target_path).exists() {
+        return Err(format!("Berkas fisik tidak ditemukan di sistem: {}", path));
+    }
+    tauri_plugin_opener::open_path(&target_path, None::<&str>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_file_location_physically(path: String) -> Result<(), String> {
+    use std::path::Path;
+    let mut target_path = path.clone();
+    if !Path::new(&target_path).exists() && target_path.contains('\u{2215}') {
+        let alt = target_path.replace('\u{2215}', "-");
+        if Path::new(&alt).exists() {
+            target_path = alt;
+        }
+    }
+    if !Path::new(&target_path).exists() {
+        if let Some(parent) = Path::new(&target_path).parent() {
+            if parent.exists() {
+                return tauri_plugin_opener::open_path(parent, None::<&str>).map_err(|e| e.to_string());
+            }
+        }
+        return Err(format!("Berkas fisik atau lokasinya tidak ditemukan di sistem: {}", path));
+    }
+    tauri_plugin_opener::reveal_item_in_dir(&target_path).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

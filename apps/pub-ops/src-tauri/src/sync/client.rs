@@ -145,11 +145,16 @@ pub async fn sync_pull_from_gas(config: &SyncRuntimeConfig) -> Result<Vec<SyncCh
 
     let mut changes = Vec::new();
     for val in arr {
+        let data_json = match val.get("data_json") {
+            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            Some(v) => Some(v.to_string()),
+            None => None,
+        };
         changes.push(SyncChange {
             table_name: val["table_name"].as_str().unwrap_or("").to_string(),
             row_id: val["row_id"].as_i64().unwrap_or(0),
             action: val["action"].as_str().unwrap_or("").to_string(),
-            data_json: val.get("data_json").map(|v| v.to_string()),
+            data_json,
             created_at: val["created_at"].as_str().unwrap_or("").to_string(),
         });
     }
@@ -159,13 +164,19 @@ pub async fn sync_pull_from_gas(config: &SyncRuntimeConfig) -> Result<Vec<SyncCh
 /// Step 7: Apply remote changes ke local DB (re-acquire lock)
 pub fn sync_apply_remote(conn: &Connection, changes: &[SyncChange]) -> Result<usize, String> {
     conn.execute("INSERT OR IGNORE INTO _sync_skip (val) VALUES (1)", []).ok();
+    // Nonaktifkan foreign keys sementara agar urutan kedatangan data antar tabel tidak memblokir import
+    let _ = conn.execute("PRAGMA foreign_keys = OFF;", []);
+
     let mut total = 0;
     for change in changes {
         if change.table_name.is_empty() { continue; }
         apply_remote_change(conn, change);
         total += 1;
     }
+
     conn.execute("DELETE FROM _sync_skip", []).ok();
+    let _ = conn.execute("PRAGMA foreign_keys = ON;", []);
+
     let ts = chrono::Utc::now().timestamp().to_string();
     let _ = conn.execute("INSERT OR REPLACE INTO p2p_config (key, value) VALUES ('sync_last_pull_ts', ?1)", params![ts]);
     Ok(total)
@@ -213,23 +224,32 @@ fn read_row_json(conn: &Connection, table: &str, row_id: i64) -> Option<String> 
 }
 
 fn apply_remote_change(conn: &Connection, change: &SyncChange) {
-    match change.action.as_str() {
+    match change.action.to_uppercase().as_str() {
         "DELETE" => {
             let sql = format!("DELETE FROM {} WHERE id = ?1", change.table_name);
             let _ = conn.execute(&sql, params![change.row_id]);
         }
-        "INSERT" | "UPDATE" => {
+        "INSERT" | "UPDATE" | "UPSERT" => {
             if let Some(ref json) = change.data_json {
                 apply_upsert(conn, &change.table_name, change.row_id, json);
             }
         }
-        _ => {}
+        _ => {
+            if let Some(ref json) = change.data_json {
+                apply_upsert(conn, &change.table_name, change.row_id, json);
+            }
+        }
     }
 }
 
 fn apply_upsert(conn: &Connection, table: &str, _row_id: i64, data_json: &str) {
-    let data: serde_json::Value = match serde_json::from_str(data_json) { Ok(v) => v, Err(_) => return };
-    let obj = match data.as_object() { Some(o) => o, None => return };
+    let mut data: serde_json::Value = match serde_json::from_str(data_json) { Ok(v) => v, Err(_) => return };
+    if let serde_json::Value::String(ref s) = data {
+        if let Ok(nested) = serde_json::from_str::<serde_json::Value>(s) {
+            data = nested;
+        }
+    }
+    let mut obj = match data.as_object() { Some(o) => o.clone(), None => return };
 
     if table == "app_config" || table == "p2p_config" {
         let key = obj.get("key").and_then(|k| k.as_str()).unwrap_or("");
@@ -251,20 +271,144 @@ fn apply_upsert(conn: &Connection, table: &str, _row_id: i64, data_json: &str) {
         return;
     }
 
-    let mut valid_cols = std::collections::HashSet::new();
-    let pragma_sql = format!("PRAGMA table_info({})", table);
-    if let Ok(mut stmt) = conn.prepare(&pragma_sql) {
-        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(1)) {
-            for c in rows.flatten() {
-                valid_cols.insert(c);
+    // Normalisasi khusus tabel invoices
+    if table == "invoices" {
+        // A. Handle invoiceNo dan id
+        let raw_id = obj.get("id");
+        let invoice_no_str = if let Some(serde_json::Value::String(s)) = raw_id {
+            if s.parse::<i64>().is_err() {
+                Some(s.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(ref inv_no) = invoice_no_str {
+            // Cek apakah invoice dengan nomor ini sudah tersimpan di SQLite
+            let search_pattern = format!("%{}%", inv_no);
+            let existing_id: Option<i64> = conn.query_row(
+                "SELECT id FROM invoices WHERE file_path LIKE ?1 OR customer_snapshot LIKE ?1 LIMIT 1",
+                params![search_pattern],
+                |r| r.get(0),
+            ).ok();
+
+            if let Some(eid) = existing_id {
+                obj.insert("id".to_string(), serde_json::json!(eid));
+            } else {
+                obj.remove("id");
+            }
+        }
+
+        // B. Handle customer_id (bisa berupa ID numerik atau Nama Pelanggan string dari GAS)
+        let mut customer_name = String::new();
+        if let Some(cust_val) = obj.get("customer_id") {
+            match cust_val {
+                serde_json::Value::String(name) => {
+                    let clean_name = name.trim();
+                    if !clean_name.is_empty() {
+                        customer_name = clean_name.to_string();
+                        // Cari atau buat kontak di tabel contacts
+                        let contact_id: Option<i64> = conn.query_row(
+                            "SELECT id FROM contacts WHERE name = ?1 LIMIT 1",
+                            params![clean_name],
+                            |r| r.get(0),
+                        ).ok();
+
+                        let cid = if let Some(cid) = contact_id {
+                            cid
+                        } else {
+                            let now = chrono::Utc::now().to_rfc3339();
+                            let _ = conn.execute(
+                                "INSERT INTO contacts (name, type, created_at, updated_at) VALUES (?1, 'customer', ?2, ?2)",
+                                params![clean_name, now],
+                            );
+                            conn.last_insert_rowid()
+                        };
+                        obj.insert("customer_id".to_string(), serde_json::json!(cid));
+                    } else {
+                        obj.insert("customer_id".to_string(), serde_json::Value::Null);
+                    }
+                }
+                serde_json::Value::Number(num) => {
+                    if let Some(id_num) = num.as_i64() {
+                        if let Ok(name) = conn.query_row(
+                            "SELECT name FROM contacts WHERE id = ?1 LIMIT 1",
+                            params![id_num],
+                            |r| r.get::<_, String>(0),
+                        ) {
+                            customer_name = name;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // C. Normalisasi file_path (jika bukan JSON, buat metadata JSON yang valid)
+        let raw_file_path = obj.get("file_path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let is_json_metadata = raw_file_path.trim().starts_with('{') && raw_file_path.trim().ends_with('}');
+        if !is_json_metadata {
+            let inv_no = invoice_no_str.unwrap_or(if raw_file_path.is_empty() { "DRAF".to_string() } else { raw_file_path.clone() });
+            let inv_date = obj.get("created_at").and_then(|v| v.as_str()).unwrap_or("")
+                .chars().take(10).collect::<String>();
+            let pay_status = obj.get("payment_status").and_then(|v| v.as_str()).unwrap_or("LUNAS").to_string();
+            let cust_display = if !customer_name.is_empty() { customer_name.clone() } else { "Umum".to_string() };
+
+            let metadata_json = serde_json::json!({
+                "invoiceNo": inv_no,
+                "invoiceDate": inv_date,
+                "invoiceHal": "Layanan Jasa",
+                "invoiceLampiran": "-",
+                "paymentStatus": pay_status,
+                "customerName": cust_display,
+                "customerWa": "",
+                "customerEmail": "",
+                "customerAddress": "",
+                "isPenulis": false,
+                "pdfFileName": raw_file_path
+            });
+            obj.insert("file_path".to_string(), serde_json::Value::String(metadata_json.to_string()));
+
+            let has_snapshot = obj.get("customer_snapshot").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false);
+            if !has_snapshot {
+                let snapshot_json = serde_json::json!({
+                    "name": cust_display,
+                    "wa_number": "",
+                    "email": "",
+                    "address": "",
+                    "isPenulis": false
+                });
+                obj.insert("customer_snapshot".to_string(), serde_json::Value::String(snapshot_json.to_string()));
+            }
+
+            if !obj.contains_key("payment_status") || obj.get("payment_status").is_none() {
+                obj.insert("payment_status".to_string(), serde_json::Value::String(pay_status));
             }
         }
     }
 
+    let mut valid_cols = std::collections::HashSet::new();
+    let pragma_sql = format!("PRAGMA table_info({})", table);
+    if let Ok(mut stmt) = conn.prepare(&pragma_sql) {
+        if let Ok(rows) = stmt.query_map([], |r| {
+            let col_name: String = r.get(1)?;
+            let col_type: String = r.get(2)?;
+            Ok((col_name, col_type.to_uppercase()))
+        }) {
+            for item in rows.flatten() {
+                valid_cols.insert(item);
+            }
+        }
+    }
+
+    let col_types: std::collections::HashMap<String, String> = valid_cols.into_iter().collect();
+
     let mut names = Vec::new();
     let mut vals = Vec::new();
     for (k, v) in obj {
-        if !valid_cols.is_empty() && !valid_cols.contains(k) {
+        if !col_types.is_empty() && !col_types.contains_key(&k) {
             continue;
         }
         if k == "id" {
@@ -275,18 +419,29 @@ fn apply_upsert(conn: &Connection, table: &str, _row_id: i64, data_json: &str) {
                 }
             }
         }
+
+        let is_text_col = col_types.get(&k).map(|t| t.contains("TEXT") || t.contains("CHAR")).unwrap_or(false);
+
         names.push(k.clone());
         vals.push(match v {
             serde_json::Value::String(s) => format!("'{}'", s.replace('\'', "''")),
             serde_json::Value::Null => "NULL".to_string(),
-            serde_json::Value::Number(n) => n.to_string(),
-            serde_json::Value::Bool(b) => (if *b { "1" } else { "0" }).to_string(),
+            serde_json::Value::Number(n) => {
+                if is_text_col {
+                    format!("'{}'", n)
+                } else {
+                    n.to_string()
+                }
+            }
+            serde_json::Value::Bool(b) => (if b { "1" } else { "0" }).to_string(),
             other => format!("'{}'", other.to_string().trim_matches('"').replace('\'', "''")),
         });
     }
     if names.is_empty() { return; }
     let sql = format!("INSERT OR REPLACE INTO {} ({}) VALUES ({})", table, names.join(", "), vals.join(", "));
-    let _ = conn.execute(&sql, []);
+    if let Err(e) = conn.execute(&sql, []) {
+        eprintln!("[SYNC] Gagal upsert ke tabel {}: error={} sql={}", table, e, &sql[..sql.len().min(150)]);
+    }
 }
 
 // ═══════════════════════════════════════════

@@ -219,18 +219,32 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
 
   // Aksi Buka File PDF Secara Native
   const handleOpenPDF = async (invoiceId: number) => {
+    const inv = invoices.find(i => i.id === invoiceId);
     const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
-    if (!fileEntry) {
-      showToast('Berkas PDF tidak ditemukan di database!', 'error');
-      return;
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+
+    let exists = false;
+    if (fileEntry?.path) {
+      try {
+        exists = await tauriInvoke<boolean>('check_file_exists', { path: fileEntry.path });
+      } catch {
+        exists = false;
+      }
     }
-    try {
-      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-      await tauriInvoke('open_file_physically', { path: fileEntry.path });
-      showToast('Membuka PDF invoice...', 'info');
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal membuka berkas PDF secara native!', 'error');
+
+    if (fileEntry && exists) {
+      try {
+        await tauriInvoke('open_file_physically', { path: fileEntry.path });
+        showToast('Membuka PDF invoice...', 'info');
+      } catch (err: any) {
+        console.error(err);
+        showToast(`Gagal membuka berkas PDF: ${err?.message || err}`, 'error');
+      }
+    } else {
+      showToast('Berkas fisik PDF belum tersedia di komputer ini. Membuka generator untuk cetak/preview...', 'info');
+      if (inv) {
+        handleEdit(inv);
+      }
     }
   };
 
@@ -240,37 +254,50 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
       showToast('Berkas PDF tidak ditemukan di database!', 'error');
       return;
     }
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
     try {
-      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
       await tauriInvoke('open_file_location_physically', { path: fileEntry.path });
       showToast('Membuka lokasi berkas...', 'info');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showToast('Gagal membuka lokasi berkas!', 'error');
+      showToast(`Lokasi berkas tidak ditemukan: ${err?.message || err}`, 'error');
     }
   };
 
-  const handleMoveFile = async (invoiceId: number) => {
+  // Download / Salin Berkas PDF ke lokasi pilihan pengguna secara aman
+  const handleDownloadFile = async (invoiceId: number) => {
+    const inv = invoices.find(i => i.id === invoiceId);
     const fileEntry = files.find(f => f.type === 'invoice' && f.version_label === String(invoiceId));
-    if (!fileEntry) {
-      showToast('Berkas PDF tidak ditemukan di database!', 'error');
-      return;
+    const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
+
+    let exists = false;
+    if (fileEntry?.path) {
+      try {
+        exists = await tauriInvoke<boolean>('check_file_exists', { path: fileEntry.path });
+      } catch {
+        exists = false;
+      }
     }
-    try {
-      const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
-      const destPath = await save({
-        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
-        defaultPath: fileEntry.filename
-      });
-      if (!destPath) return;
-      const bytes = await tauriInvoke<number[]>('read_file_bytes', { path: fileEntry.path });
-      await tauriInvoke('write_binary_file', { path: destPath, bytes });
-      await tauriInvoke('remove_file_physically', { path: fileEntry.path });
-      await updateFile({ ...fileEntry, path: destPath });
-      showToast('Berkas berhasil dipindahkan!', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal memindahkan berkas!', 'error');
+
+    if (fileEntry && exists) {
+      try {
+        const destPath = await save({
+          filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+          defaultPath: fileEntry.filename
+        });
+        if (!destPath) return;
+
+        await tauriInvoke('copy_file_physically', { src: fileEntry.path, dest: destPath });
+        showToast('Salinan berkas PDF berhasil diunduh / disimpan!', 'success');
+      } catch (err: any) {
+        console.error(err);
+        showToast(`Gagal mengunduh berkas: ${err?.message || err}`, 'error');
+      }
+    } else {
+      showToast('Berkas fisik PDF belum tersedia di komputer ini. Silakan generate ulang via editor...', 'info');
+      if (inv) {
+        handleEdit(inv);
+      }
     }
   };
 
@@ -1010,11 +1037,11 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
                             </svg>
                           </button>
                         )}
-                        {/* Pindahkan */}
+                        {/* Download / Simpan Salinan PDF */}
                         {hasFile && (
                           <button
-                            onClick={() => handleMoveFile(inv.id!)}
-                            title="Pindahkan Berkas"
+                            onClick={() => handleDownloadFile(inv.id!)}
+                            title="Download / Simpan Salinan PDF"
                             style={{
                               border: 'none',
                               background: 'transparent',
@@ -1028,7 +1055,9 @@ const InvoiceManager: React.FC<InvoiceManagerProps> = ({ searchQuery = '' }) => 
                             }}
                           >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M5 11H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2M12 3v12m0 0l-4-4m4 4l4-4"/>
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                              <polyline points="7 10 12 15 17 10"></polyline>
+                              <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
                           </button>
                         )}

@@ -539,9 +539,9 @@ const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ selectedFileId }) =
                               try {
                                 const { invoke: tauriInvoke } = await import('@tauri-apps/api/core');
                                 await tauriInvoke('open_file_physically', { path: pdf.path });
-                              } catch (err) {
+                              } catch (err: any) {
                                 console.error('Gagal membuka file:', err);
-                                showToast('Gagal membuka file PDF', 'error');
+                                showToast(`Gagal membuka file PDF: ${err?.message || err}`, 'error');
                               }
                             }}
                             style={{

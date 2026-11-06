@@ -36,10 +36,20 @@ impl Database {
             .conn
             .prepare("SELECT id, name, wa_number, email, address, job, institution, data_source, email_valid, wa_valid, needs_review, followup_status, notes, type, created_at, updated_at FROM contacts")?;
         let contacts = stmt.query_map([], |row| {
+            let wa_number: Option<String> = match row.get::<_, Option<String>>(2) {
+                Ok(val) => val,
+                Err(_) => {
+                    if let Ok(n) = row.get::<_, Option<i64>>(2) {
+                        n.map(|num| num.to_string())
+                    } else {
+                        None
+                    }
+                }
+            };
             Ok(Contact {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                wa_number: row.get(2)?,
+                wa_number,
                 email: row.get(3)?,
                 address: row.get(4)?,
                 job: row.get(5)?,

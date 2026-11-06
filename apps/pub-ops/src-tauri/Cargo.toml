@@ -1,6 +1,6 @@
 [package]
 name = "pubhub-ops"
-version = "0.1.29"
+version = "0.1.30"
 description = "PubHub Ops Desktop Application"
 authors = ["you"]
 edition = "2021"

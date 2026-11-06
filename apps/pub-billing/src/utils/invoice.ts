@@ -50,15 +50,63 @@ export const evaluateItemFormula = (formulaStr: string, item: InvoiceItem): any 
 };
 
 export const getInvoiceMetadata = (invoice: any) => {
-  try {
-    if (invoice.file_path) return JSON.parse(invoice.file_path);
-  } catch (e) {
-    console.error('Gagal memuat metadata invoice:', e);
+  if (!invoice) {
+    return {
+      invoiceNo: '-', invoiceDate: '-', invoiceHal: '-',
+      invoiceLampiran: '-', paymentStatus: 'BELUM LUNAS',
+      customerName: 'Umum', customerWa: '-', customerAddress: '',
+      spesifikasiFasilitas: ''
+    };
   }
+
+  try {
+    if (typeof invoice.file_path === 'string') {
+      const trimmed = invoice.file_path.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      }
+    }
+  } catch (e) {
+    // Non-JSON or corrupted file_path
+  }
+
+  // Fallback ke customer_snapshot jika file_path bukan JSON
+  let customerName = 'Umum';
+  let customerWa = '-';
+  let customerAddress = '';
+  if (invoice.customer_snapshot) {
+    try {
+      const snap = typeof invoice.customer_snapshot === 'string'
+        ? JSON.parse(invoice.customer_snapshot)
+        : invoice.customer_snapshot;
+      if (snap?.name) customerName = snap.name;
+      if (snap?.wa_number) customerWa = snap.wa_number;
+      if (snap?.address) customerAddress = snap.address;
+    } catch (_) {}
+  }
+
+  // Coba ekstrak nomor invoice dari string file_path jika ada pola "Invoice-KBM_2026_07_23_0004.pdf"
+  let invoiceNo = '-';
+  if (typeof invoice.file_path === 'string' && invoice.file_path) {
+    const match = invoice.file_path.match(/Invoice-([a-zA-Z0-9_-]+)\.pdf/i);
+    if (match && match[1]) {
+      invoiceNo = match[1].replace(/_/g, '/');
+    }
+  }
+
+  const defaultStatus = invoice.payment_status || 'BELUM LUNAS';
   return {
-    invoiceNo: '-', invoiceDate: '-', invoiceHal: '-',
-    invoiceLampiran: '-', paymentStatus: 'BERMASALAH',
-    customerName: 'Umum', customerWa: '-', customerAddress: '',
+    invoiceNo,
+    invoiceDate: invoice.created_at ? invoice.created_at.substring(0, 10) : '-',
+    invoiceHal: 'Layanan Jasa',
+    invoiceLampiran: '-',
+    paymentStatus: defaultStatus,
+    customerName,
+    customerWa,
+    customerAddress,
     spesifikasiFasilitas: ''
   };
 };
@@ -156,10 +204,10 @@ export const formatPdfFilename = (
 
   // Clean illegal characters for OS filenames: / \ : * ? " < > |
   result = result
-    .replace(/\//g, '∕')
-    .replace(/\\/g, '⧵')
+    .replace(/[\/\\]/g, '-')
     .replace(/:/g, ' - ')
-    .replace(/[*?"<>|]/g, '');
+    .replace(/[*?"<>|]/g, '')
+    .replace(/-+/g, '-');
 
   if (!result.toLowerCase().endsWith('.pdf')) {
     result += '.pdf';

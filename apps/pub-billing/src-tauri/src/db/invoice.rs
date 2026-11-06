@@ -36,22 +36,63 @@ impl Database {
     pub fn get_invoices(&self) -> Result<Vec<Invoice>, DbError> {
         let mut stmt = self.conn.prepare("SELECT id, created_at, customer_id, items_json, shipping_cost, admin_fee, total, export_format, file_path, sync_status, cloud_file_url, naskah_id, payment_status, paid_amount, remaining_amount, payment_notes, updated_at, customer_snapshot FROM invoices ORDER BY created_at DESC")?;
         let invoices = stmt.query_map([], |row| {
+            let customer_id: Option<i64> = match row.get::<_, Option<i64>>(2) {
+                Ok(val) => val,
+                Err(_) => {
+                    if let Ok(s) = row.get::<_, Option<String>>(2) {
+                        s.and_then(|str_val| str_val.parse::<i64>().ok())
+                    } else {
+                        None
+                    }
+                }
+            };
+            let naskah_id: Option<i64> = match row.get::<_, Option<i64>>(11) {
+                Ok(val) => val,
+                Err(_) => {
+                    if let Ok(s) = row.get::<_, Option<String>>(11) {
+                        s.and_then(|str_val| str_val.parse::<i64>().ok())
+                    } else {
+                        None
+                    }
+                }
+            };
+            let paid_amount: f64 = match row.get::<_, Option<f64>>(13) {
+                Ok(val) => val.unwrap_or(0.0),
+                Err(_) => {
+                    if let Ok(s) = row.get::<_, Option<String>>(13) {
+                        s.and_then(|str_val| str_val.parse::<f64>().ok()).unwrap_or(0.0)
+                    } else {
+                        0.0
+                    }
+                }
+            };
+            let remaining_amount: f64 = match row.get::<_, Option<f64>>(14) {
+                Ok(val) => val.unwrap_or(0.0),
+                Err(_) => {
+                    if let Ok(s) = row.get::<_, Option<String>>(14) {
+                        s.and_then(|str_val| str_val.parse::<f64>().ok()).unwrap_or(0.0)
+                    } else {
+                        0.0
+                    }
+                }
+            };
+
             Ok(Invoice {
                 id: row.get(0)?,
                 created_at: row.get(1)?,
-                customer_id: row.get(2)?,
+                customer_id,
                 items_json: row.get(3)?,
-                shipping_cost: row.get(4)?,
-                admin_fee: row.get(5)?,
-                total: row.get(6)?,
+                shipping_cost: row.get::<_, Option<f64>>(4).unwrap_or(Some(0.0)).unwrap_or(0.0),
+                admin_fee: row.get::<_, Option<f64>>(5).unwrap_or(Some(0.0)).unwrap_or(0.0),
+                total: row.get::<_, Option<f64>>(6).unwrap_or(Some(0.0)).unwrap_or(0.0),
                 export_format: row.get(7)?,
                 file_path: row.get(8)?,
                 sync_status: row.get(9)?,
                 cloud_file_url: row.get(10)?,
-                naskah_id: row.get(11)?,
+                naskah_id,
                 payment_status: row.get(12)?,
-                paid_amount: row.get(13)?,
-                remaining_amount: row.get(14)?,
+                paid_amount,
+                remaining_amount,
                 payment_notes: row.get(15)?,
                 updated_at: row.get(16)?,
                 customer_snapshot: row.get(17)?,

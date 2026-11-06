@@ -396,6 +396,8 @@ pub fn run() {
             commands::file::write_binary_file_base64,
             commands::file::open_file_physically,
             commands::file::open_file_location_physically,
+            commands::file::check_file_exists,
+            commands::file::copy_file_physically,
             commands::file::get_custom_work_dir,
             commands::file::set_custom_work_dir,
             commands::file::get_watch_folders,
