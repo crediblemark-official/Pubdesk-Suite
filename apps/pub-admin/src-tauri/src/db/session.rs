@@ -434,6 +434,11 @@ impl Database {
     // Work Session management
     pub fn start_work_session(&self, tim_id: i64, start_time: &str) -> Result<i64, DbError> {
         let now = chrono::Local::now().to_rfc3339();
+        // Tutup sesi kerja lama yang masih menggantung untuk tim_id ini
+        let _ = self.conn.execute(
+            "UPDATE work_hours SET end_time = ?1 WHERE tim_id = ?2 AND end_time IS NULL",
+            params![now, tim_id],
+        );
         self.conn.execute(
             "INSERT INTO work_hours (tim_id, start_time, end_time, duration_seconds, notes, created_at) VALUES (?1, ?2, NULL, 0, NULL, ?3)",
             params![tim_id, start_time, now]
@@ -446,10 +451,30 @@ impl Database {
             "UPDATE work_hours SET end_time = ?1, duration_seconds = ?2, notes = ?3 WHERE id = ?4 AND tim_id = ?5",
             params![end_time, duration_seconds, notes, id, tim_id]
         )?;
+        // Pastikan SEMUA sesi berstatus aktif untuk tim_id ini ditutup agar tidak meninggalkan sesi yatim (orphaned)
+        let _ = self.conn.execute(
+            "UPDATE work_hours SET end_time = ?1 WHERE tim_id = ?2 AND end_time IS NULL",
+            params![end_time, tim_id],
+        );
         Ok(())
     }
 
     pub fn get_active_work_session(&self, tim_id: i64) -> Result<Option<WorkSession>, DbError> {
+        // Otomatis bersihkan sesi mati (zombie session yang tidak pernah mengirim heartbeat selama >60 detik)
+        let _ = self.conn.execute(
+            "UPDATE work_hours 
+             SET end_time = COALESCE(last_heartbeat, start_time), 
+                 duration_seconds = MAX(0, CAST(
+                     (strftime('%s', COALESCE(last_heartbeat, start_time)) - strftime('%s', start_time)) 
+                     AS INTEGER
+                 )),
+                 notes = COALESCE(notes, 'Auto-closed (heartbeat timeout)')
+             WHERE tim_id = ?1 
+               AND end_time IS NULL 
+               AND (strftime('%s', 'now') - strftime('%s', COALESCE(last_heartbeat, start_time))) > 60",
+            params![tim_id],
+        );
+
         let mut stmt = self.conn.prepare(
             "SELECT id, tim_id, start_time, end_time, duration_seconds, notes, created_at FROM work_hours WHERE tim_id = ?1 AND end_time IS NULL ORDER BY id DESC LIMIT 1"
         )?;

@@ -94,14 +94,13 @@ export const WorkSessionTimer: React.FC<WorkSessionTimerProps> = ({ showToast, o
   };
 
   const handleConfirmStopWork = async () => {
-    if (!activeSession?.id) return;
     try {
       const endTime = new Date().toISOString();
-      const startTime = new Date(activeSession.start_time).getTime();
+      const startTime = activeSession?.start_time ? new Date(activeSession.start_time).getTime() : Date.now();
       const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
       
       await invoke('stop_work_session', {
-        id: activeSession.id,
+        id: activeSession?.id || 0,
         endTime,
         durationSeconds: elapsedSeconds,
         notes: sessionNote.trim() || null

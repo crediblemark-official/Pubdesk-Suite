@@ -16,15 +16,32 @@ export const WindowControls: React.FC = () => {
         try {
           const activeSession = await invoke<any>('get_active_work_session');
           if (activeSession) {
-            // Tampilkan pesan dialog secara asinkron jika ada sesi aktif
+            // Tampilkan dialog konfirmasi interaktif
             const dialog = await import('@tauri-apps/plugin-dialog');
-            await dialog.message(
-              'Sesi jam kerja Anda masih aktif. Harap hentikan (stop) sesi kerja terlebih dahulu sebelum menutup aplikasi!',
+            const shouldClose = await dialog.ask(
+              'Sesi jam kerja Anda masih aktif. Apakah Anda ingin mengakhiri sesi kerja dan menutup aplikasi sekarang?',
               {
-                title: 'Sesi Kerja Masih Aktif',
+                title: 'Konfirmasi Menutup Aplikasi',
                 kind: 'warning',
+                okLabel: 'Akhiri Sesi & Tutup',
+                cancelLabel: 'Batal',
               }
             );
+
+            if (shouldClose) {
+              try {
+                const endTime = new Date().toISOString();
+                await invoke('stop_work_session', {
+                  id: activeSession.id,
+                  endTime,
+                  durationSeconds: activeSession.duration_seconds || 0,
+                  notes: 'Sesi diakhiri otomatis saat aplikasi ditutup'
+                });
+              } catch (stopErr) {
+                console.error('Gagal menghentikan sesi kerja saat penutupan:', stopErr);
+              }
+              appWindow.destroy().catch(console.error);
+            }
           } else {
             // Jika tidak ada sesi aktif, hancurkan/tutup window paksa
             appWindow.destroy().catch(console.error);
